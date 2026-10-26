@@ -1,0 +1,63 @@
+{
+  "expo": {
+    "name": "Budget Planner",
+    "slug": "budget_planner",
+    "scheme": "budgetplanner",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "owner": "crazydev09",
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b549f52a-718d-4165-9f19-bbbacd8b89f7",
+      "fallbackToCacheTimeout": 0,
+      "checkAutomatically": "ON_LOAD"
+    },
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#702963"
+    },
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "com.crazydev09.budgetplanner",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      }
+    },
+    "android": {
+      "package": "com.crazydev09.budgetplanner",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/icon.png",
+        "backgroundColor": "#702963"
+      },
+      "edgeToEdgeEnabled": true
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-font",
+      "expo-sqlite",
+      "expo-secure-store",
+      "expo-status-bar",
+      "expo-updates",
+      "@react-native-community/datetimepicker",
+      [
+        "expo-notifications",
+        {
+          "color": "#702963"
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "b549f52a-718d-4165-9f19-bbbacd8b89f7"
+      }
+    }
+  }
+}
