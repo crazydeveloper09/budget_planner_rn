@@ -57,7 +57,8 @@
     "extra": {
       "eas": {
         "projectId": "b549f52a-718d-4165-9f19-bbbacd8b89f7"
-      }
+      },
+      "apiUrl": "https://budgetplannerrn-production.up.railway.app"
     }
   }
 }

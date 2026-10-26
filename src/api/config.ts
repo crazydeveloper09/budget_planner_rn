@@ -5,6 +5,9 @@ export function getApiBaseUrl() {
   const env = process.env.EXPO_PUBLIC_API_URL?.replace(/\/$/, "");
   if (env) return env;
 
+  const extra = (Constants.expoConfig?.extra?.apiUrl as string | undefined)?.replace(/\/$/, "");
+  if (extra) return extra;
+
   const hostUri = Constants.expoConfig?.hostUri ?? "";
   const host = hostUri.split(":")[0];
   if (host && host !== "localhost" && host !== "127.0.0.1") {
