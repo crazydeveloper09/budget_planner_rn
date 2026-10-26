@@ -38,3 +38,4 @@ server/.mongo-data
 
 # typescript
 *.tsbuildinfo
+server/dist

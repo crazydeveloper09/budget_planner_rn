@@ -206,7 +206,7 @@ router.put("/households/snapshot", requireAccess, async (req, res) => {
             isRegular: true,
             ownerName: typeof item.ownerName === "string" && item.ownerName.trim() ? item.ownerName.trim() : null,
           }))
-    ).map((item) => ({
+    ).map((item: { entryKind: "income" | "expense"; title: string; category: string; amount: number; ownerName: string | null }) => ({
       entryKind: item.entryKind,
       title: item.title,
       category: item.category,

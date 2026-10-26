@@ -5,12 +5,22 @@ import helmet from "helmet";
 import mongoose from "mongoose";
 import path from "path";
 import { fileURLToPath } from "url";
-import { MongoMemoryServer } from "mongodb-memory-server";
 import { config } from "./config.js";
 import authRoutes from "./routes/auth.js";
 import householdRoutes from "./routes/household.js";
 
 async function connectMongo() {
+  if (config.mongoUri) {
+    await mongoose.connect(config.mongoUri);
+    console.log("Połączono z MongoDB");
+    return;
+  }
+
+  if (config.isProduction) {
+    throw new Error("Brak MONGODB_URI albo MONGO_URL. Dodaj plugin MongoDB na Railway.");
+  }
+
+  const { MongoMemoryServer } = await import("mongodb-memory-server");
   const here = path.dirname(fileURLToPath(import.meta.url));
   const dbPath = path.join(here, "../.mongo-data");
   fs.mkdirSync(dbPath, { recursive: true });
@@ -27,6 +37,7 @@ async function connectMongo() {
 async function main() {
   await connectMongo();
   const app = express();
+  app.set("trust proxy", 1);
   app.use(helmet());
   app.use(cors());
   app.use(express.json({ limit: "2mb" }));

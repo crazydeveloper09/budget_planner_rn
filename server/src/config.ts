@@ -17,4 +17,6 @@ export const config = {
   port: Number(process.env.PORT ?? 4000),
   jwtSecret: required("JWT_SECRET"),
   encryptionKey: required("ENCRYPTION_KEY"),
+  mongoUri: process.env.MONGODB_URI || process.env.MONGO_URL || "",
+  isProduction: process.env.NODE_ENV === "production",
 };
