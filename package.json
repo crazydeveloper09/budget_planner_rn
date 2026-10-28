@@ -47,6 +47,7 @@
     "react-native-screens": "~4.26.0",
     "react-native-svg": "15.15.4",
     "react-native-vector-icons": "^10.3.0",
+    "socket.io-client": "^4.8.4",
     "tinycolor2": "^1.6.0"
   },
   "devDependencies": {

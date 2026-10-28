@@ -2,6 +2,7 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { randomInviteCode } from "../lib/crypto.js";
 import { publicE2e, publicEntries, publicHousehold, publicPeople, publicRecurring, publicUser } from "../lib/public.js";
+import { notifyHousehold } from "../lib/realtime.js";
 import { requireAccess, type AuthedRequest } from "../middleware/auth.js";
 import { Household } from "../models/Household.js";
 import { User } from "../models/User.js";
@@ -128,8 +129,8 @@ router.post("/households", requireAccess, async (req, res) => {
 
 router.put("/households/snapshot", requireAccess, async (req, res) => {
   const authed = req as AuthedRequest;
-  if (authed.role !== "owner" || !authed.householdId) {
-    res.status(403).json({ error: "Tylko konto główne może zapisać budżet rodziny." });
+  if (!authed.householdId) {
+    res.status(403).json({ error: "Brak powiązanego budżetu w chmurze." });
     return;
   }
   const household = await Household.findById(authed.householdId);
@@ -217,6 +218,7 @@ router.put("/households/snapshot", requireAccess, async (req, res) => {
 
   const user = await User.findById(authed.userId);
   await household.save();
+  notifyHousehold(authed.householdId);
   res.json(snapshot(household, true, user));
 });
 
@@ -298,6 +300,7 @@ router.post("/households/invites", requireAccess, async (req, res) => {
   }
   person.inviteCode = await uniqueInviteCode();
   await household.save();
+  notifyHousehold(authed.householdId);
   res.json({
     name: person.name,
     inviteCode: person.inviteCode,

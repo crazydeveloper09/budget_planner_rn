@@ -2,10 +2,13 @@ import cors from "cors";
 import express from "express";
 import fs from "fs";
 import helmet from "helmet";
+import { createServer } from "http";
 import mongoose from "mongoose";
 import path from "path";
+import { Server } from "socket.io";
 import { fileURLToPath } from "url";
 import { config } from "./config.js";
+import { attachRealtime } from "./lib/realtime.js";
 import authRoutes from "./routes/auth.js";
 import householdRoutes from "./routes/household.js";
 
@@ -46,7 +49,15 @@ async function main() {
   });
   app.use("/auth", authRoutes);
   app.use("/", householdRoutes);
-  app.listen(config.port, "0.0.0.0", () => {
+
+  const httpServer = createServer(app);
+  const io = new Server(httpServer, {
+    cors: { origin: true },
+    transports: ["websocket", "polling"],
+  });
+  attachRealtime(io);
+
+  httpServer.listen(config.port, "0.0.0.0", () => {
     console.log(`API nasłuchuje na porcie ${config.port}`);
   });
 }

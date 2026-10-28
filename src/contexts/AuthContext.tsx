@@ -19,7 +19,7 @@ import { clearDek, flushUserWrap, requireDek } from "../crypto/keystore";
 import { unlockE2e } from "../crypto/unlock";
 import { pushSqliteBudget } from "../sync/budget";
 
-const TOKEN_KEY = "bp_access_token";
+export const TOKEN_KEY = "bp_access_token";
 const SESSION_KEY = "bp_session";
 
 type CachedSession = {
@@ -241,7 +241,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const pushBudget = useCallback(async () => {
-    if (!user || user.role !== "owner") return;
+    if (!user) return;
     try {
       await flushUserWrap();
     } catch {

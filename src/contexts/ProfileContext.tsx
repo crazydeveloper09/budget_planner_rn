@@ -1,10 +1,14 @@
-import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
+import { AppState } from "react-native";
 import { AccountType, Member, NewMember, User } from "../db/interfaces";
 import { initDb } from "../db/init";
 import { addMember as insertMember, addMembers, listMembers, removeMember as deleteMember } from "../db/members";
 import { createProfile, getProfile } from "../db/profile";
+import { listTransactions } from "../db/transactions";
+import * as SecureStore from "expo-secure-store";
 import { pullCloudBudgetIntoSqlite } from "../sync/budget";
-import { useAuth } from "./AuthContext";
+import { connectLiveSync, disconnectLiveSync } from "../sync/liveSocket";
+import { TOKEN_KEY, useAuth } from "./AuthContext";
 
 type ProfileContextValue = {
   profile: User | null;
@@ -29,6 +33,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [members, setMembers] = useState<Member[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [ledgerStamp, setLedgerStamp] = useState(0);
+  const snapshotRef = useRef("");
+  const pullingRef = useRef(false);
   const canAdmin = user?.role !== "member";
 
   const loadFromSqlite = useCallback(async () => {
@@ -36,6 +42,48 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const existingMembers = existing ? await listMembers(existing.id) : [];
     return { existing, existingMembers };
   }, []);
+
+  const snapshotOf = useCallback(async (existing: User | null, existingMembers: Member[]) => {
+    const entries = existing ? await listTransactions(existing.id) : [];
+    return JSON.stringify({
+      profile: existing,
+      members: existingMembers,
+      entries: entries.map((entry) => [
+        entry.id,
+        entry.date,
+        entry.type,
+        entry.name,
+        entry.category,
+        entry.amount,
+        entry.regular,
+        entry.memberId,
+      ]),
+    });
+  }, []);
+
+  const applySqlite = useCallback(async () => {
+    const { existing, existingMembers } = await loadFromSqlite();
+    const next = await snapshotOf(existing, existingMembers);
+    if (next === snapshotRef.current) return existing;
+    snapshotRef.current = next;
+    setProfile(existing);
+    setMembers(existingMembers);
+    setLedgerStamp((current) => current + 1);
+    return existing;
+  }, [loadFromSqlite, snapshotOf]);
+
+  const pullLive = useCallback(async () => {
+    if (!user || pullingRef.current) return;
+    pullingRef.current = true;
+    try {
+      await pullCloudBudgetIntoSqlite();
+      await applySqlite();
+    } catch {
+      // offline: keep local replica
+    } finally {
+      pullingRef.current = false;
+    }
+  }, [applySqlite, user]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -63,6 +111,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
 
         if (isMounted) {
+          snapshotRef.current = await snapshotOf(existing, existingMembers);
           setProfile(existing);
           setMembers(existingMembers);
           setLedgerStamp((current) => current + 1);
@@ -83,7 +132,35 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       isMounted = false;
     };
-  }, [authReady, household?.id, user?.id, user?.role, loadFromSqlite, pushBudget]);
+  }, [authReady, household?.id, user?.id, user?.role, loadFromSqlite, pushBudget, snapshotOf]);
+
+  useEffect(() => {
+    if (!isReady || !user) return;
+
+    let cancelled = false;
+    void SecureStore.getItemAsync(TOKEN_KEY).then((token) => {
+      if (!token || cancelled) return;
+      connectLiveSync(token, () => {
+        void pullLive();
+      });
+    });
+
+    const onAppState = (state: string) => {
+      if (state !== "active") return;
+      if (user.role === "owner") {
+        void pushBudget();
+        return;
+      }
+      void pullLive();
+    };
+    const sub = AppState.addEventListener("change", onAppState);
+
+    return () => {
+      cancelled = true;
+      disconnectLiveSync();
+      sub.remove();
+    };
+  }, [isReady, user, pullLive, pushBudget]);
 
   const completeOnboarding = useCallback(async (input: {
     name: string;
