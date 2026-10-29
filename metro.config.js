@@ -53,7 +53,18 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
 
-  return context.resolveRequest(context, moduleName, platform);
+  const resolved = context.resolveRequest(context, moduleName, platform);
+  const filePath =
+    resolved?.type === "sourceFile" && typeof resolved.filePath === "string"
+      ? resolved.filePath.replace(/\\/g, "/")
+      : "";
+  if (filePath.includes("/expo-notifications/") && filePath.includes("TopicSubscriptionModule.android")) {
+    return {
+      type: "sourceFile",
+      filePath: path.resolve(__dirname, "src/shims/ExpoTopicSubscriptionModule.js"),
+    };
+  }
+  return resolved;
 };
 
 module.exports = config;

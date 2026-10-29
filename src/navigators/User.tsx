@@ -15,7 +15,7 @@ const UserNavigator = () => {
         <Stack.Screen
           name="User Index"
           component={UserIndexScreen}
-          options={{ headerTitle: "Moje informacje" }}
+          options={{ headerTitle: "Profil" }}
         />
         <Stack.Screen
           name="FamilyRankings"

@@ -17,6 +17,7 @@ import { CloudFamilyPerson, CloudHousehold, CloudMember, CloudUser, SessionPaylo
 import { wrapDek } from "../crypto/e2e";
 import { clearDek, flushUserWrap, requireDek } from "../crypto/keystore";
 import { unlockE2e } from "../crypto/unlock";
+import { unregisterChatPushToken } from "../notifications/chatPush";
 import { pushSqliteBudget } from "../sync/budget";
 
 export const TOKEN_KEY = "bp_access_token";
@@ -106,6 +107,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, [applyCached]);
 
   const logout = useCallback(async () => {
+    try {
+      await unregisterChatPushToken();
+    } catch {
+      // wylogowanie i tak czyści sesję
+    }
     setAccessToken(null);
     await SecureStore.deleteItemAsync(TOKEN_KEY);
     await SecureStore.deleteItemAsync(SESSION_KEY);

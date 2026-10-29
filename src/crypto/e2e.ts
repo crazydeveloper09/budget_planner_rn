@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { getRandomBytes } from "expo-crypto";
 import { bytesToHex, hexToBytes, utf8Bytes, utf8String } from "./bytes";
 import { CloudEntry, E2eEnvelope, E2eWrap } from "../api/types";
-import { AccountType } from "../db/interfaces";
+import { AccountType, ChatPlan } from "../db/interfaces";
 
 const PBKDF2_ITERS = 120_000;
 
@@ -21,6 +21,38 @@ export type BudgetPlaintext = {
     salary: number | null;
   }>;
   entries: CloudEntry[];
+  chat?: {
+    topics: Array<{ id: string; title: string; createdAt: string }>;
+    messages: Array<{
+      id: string;
+      topicId: string;
+      authorName: string;
+      body: string;
+      createdAt: string;
+      plan: ChatPlan | null;
+    }>;
+  };
+  receipts?: Array<{
+    id: string;
+    date: string;
+    name: string;
+    category: string;
+    amount: number;
+    ownerName: string | null;
+    createdAt: string;
+    image?: string;
+  }>;
+};
+
+export type ReceiptPlaintext = {
+  id: string;
+  date: string;
+  name: string;
+  category: string;
+  amount: number;
+  ownerName: string | null;
+  createdAt: string;
+  image: string;
 };
 
 export function randomDek(): Uint8Array {
@@ -67,4 +99,20 @@ export function decryptBudget(dek: Uint8Array, envelope: Pick<E2eEnvelope, "nonc
   const ciphertext = hexToBytes(envelope.ciphertext);
   const plain = utf8String(gcm(dek, nonce).decrypt(ciphertext));
   return JSON.parse(plain) as BudgetPlaintext;
+}
+
+export function encryptReceipt(dek: Uint8Array, payload: ReceiptPlaintext): Pick<E2eEnvelope, "nonce" | "ciphertext"> {
+  const nonce = getRandomBytes(12);
+  const ciphertext = gcm(dek, nonce).encrypt(utf8Bytes(JSON.stringify(payload)));
+  return {
+    nonce: bytesToHex(nonce),
+    ciphertext: bytesToHex(ciphertext),
+  };
+}
+
+export function decryptReceipt(dek: Uint8Array, envelope: Pick<E2eEnvelope, "nonce" | "ciphertext">): ReceiptPlaintext {
+  const nonce = hexToBytes(envelope.nonce);
+  const ciphertext = hexToBytes(envelope.ciphertext);
+  const plain = utf8String(gcm(dek, nonce).decrypt(ciphertext));
+  return JSON.parse(plain) as ReceiptPlaintext;
 }

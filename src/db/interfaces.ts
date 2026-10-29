@@ -36,3 +36,46 @@ export interface Transaction {
 }
 
 export type NewTransaction = Omit<Transaction, "id" | "userId">;
+
+export type Receipt = {
+  id: string;
+  userId: number;
+  entryId: number | null;
+  date: string;
+  name: string;
+  category: string;
+  amount: number;
+  ownerName: string | null;
+  createdAt: string;
+  uri: string;
+  fileName: string;
+};
+
+export type NewReceipt = Omit<Receipt, "userId">;
+
+export type ChatPlan = {
+  type: TransactionType;
+  name: string;
+  category: string;
+  amount: number;
+  date: string;
+  memberId: number | null;
+  ownerName?: string | null;
+};
+
+export type ChatTopic = {
+  id: string;
+  userId: number;
+  title: string;
+  createdAt: string;
+};
+
+export type ChatMessage = {
+  id: string;
+  userId: number;
+  topicId: string;
+  authorName: string;
+  body: string;
+  createdAt: string;
+  plan: ChatPlan | null;
+};

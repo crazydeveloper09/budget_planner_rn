@@ -3,7 +3,10 @@ import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { CommonActions } from "@react-navigation/native";
 import { BottomNavigation } from "react-native-paper";
 import { StatusBar, StyleSheet, View } from "react-native";
+import { useProfile } from "../contexts/ProfileContext";
+import ChatNavigator from "./Chat";
 import ExpensesNavigator from "./Expense";
+import ReceiptsNavigator from "./Receipts";
 import UserNavigator from "./User";
 import SettingsNavigator from "./Settings";
 
@@ -12,6 +15,8 @@ const Tab = createBottomTabNavigator();
 StatusBar.setBarStyle("light-content");
 
 const MainNavigator = () => {
+  const { profile } = useProfile();
+  const showChat = profile?.accountType === "family" || profile?.accountType === "business";
   return (
     <View style={styles.root}>
       <Tab.Navigator
@@ -68,10 +73,32 @@ const MainNavigator = () => {
           }}
         />
         <Tab.Screen
+          name="Receipts"
+          component={ReceiptsNavigator}
+          options={{
+            tabBarLabel: "Paragony",
+            tabBarIcon: ({ color, size }) => (
+              <MaterialCommunityIcons name="file-image-outline" color={color} size={size} />
+            ),
+          }}
+        />
+        {showChat ? (
+          <Tab.Screen
+            name="Chat"
+            component={ChatNavigator}
+            options={{
+              tabBarLabel: "Czat",
+              tabBarIcon: ({ color, size }) => (
+                <MaterialCommunityIcons name="chat-outline" color={color} size={size} />
+              ),
+            }}
+          />
+        ) : null}
+        <Tab.Screen
           name="User"
           component={UserNavigator}
           options={{
-            tabBarLabel: "Moje informacje",
+            tabBarLabel: "Profil",
             tabBarIcon: ({ color, size }) => (
               <FontAwesome name="user-circle" color={color} size={size} />
             ),

@@ -1,5 +1,14 @@
 import React from "react";
-import { Alert, Pressable, ScrollView, Share, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  View,
+} from "react-native";
 import { Text } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
@@ -55,7 +64,13 @@ const UserIndexScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+    >
       <Text style={styles.name}>{profile?.name ?? "Profil"}</Text>
       <Text style={styles.meta}>{account?.title}</Text>
       {loggedAs ? <Text style={styles.loggedAs}>Zalogowany jako {loggedAs}</Text> : null}
@@ -147,17 +162,19 @@ const UserIndexScreen: React.FC = () => {
         }}
       />
     </ScrollView>
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: "#fff" },
   container: {
     flex: 1,
     backgroundColor: "#fff",
   },
   content: {
     padding: 20,
-    paddingBottom: 32,
+    paddingBottom: 140,
   },
   name: {
     fontFamily: "MontserratSemiBold",

@@ -4,6 +4,8 @@ import { AccountType, Member, NewMember, User } from "../db/interfaces";
 import { initDb } from "../db/init";
 import { addMember as insertMember, addMembers, listMembers, removeMember as deleteMember } from "../db/members";
 import { createProfile, getProfile } from "../db/profile";
+import { listChatMessages, listChatTopics } from "../db/chat";
+import { listReceipts } from "../db/receipts";
 import { listTransactions } from "../db/transactions";
 import * as SecureStore from "expo-secure-store";
 import { pullCloudBudgetIntoSqlite } from "../sync/budget";
@@ -35,6 +37,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [ledgerStamp, setLedgerStamp] = useState(0);
   const snapshotRef = useRef("");
   const pullingRef = useRef(false);
+  const pullAgainRef = useRef(false);
   const canAdmin = user?.role !== "member";
 
   const loadFromSqlite = useCallback(async () => {
@@ -45,6 +48,9 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
   const snapshotOf = useCallback(async (existing: User | null, existingMembers: Member[]) => {
     const entries = existing ? await listTransactions(existing.id) : [];
+    const topics = existing ? await listChatTopics(existing.id) : [];
+    const messages = existing ? await listChatMessages(existing.id) : [];
+    const receipts = existing ? await listReceipts(existing.id) : [];
     return JSON.stringify({
       profile: existing,
       members: existingMembers,
@@ -58,6 +64,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         entry.regular,
         entry.memberId,
       ]),
+      chat: { topics, messages },
+      receipts: receipts.map((item) => [item.id, item.entryId, item.fileName, item.createdAt]),
     });
   }, []);
 
@@ -73,11 +81,18 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [loadFromSqlite, snapshotOf]);
 
   const pullLive = useCallback(async () => {
-    if (!user || pullingRef.current) return;
+    if (!user) return;
+    if (pullingRef.current) {
+      pullAgainRef.current = true;
+      return;
+    }
     pullingRef.current = true;
     try {
-      await pullCloudBudgetIntoSqlite();
-      await applySqlite();
+      do {
+        pullAgainRef.current = false;
+        await pullCloudBudgetIntoSqlite();
+        await applySqlite();
+      } while (pullAgainRef.current);
     } catch {
       // offline: keep local replica
     } finally {

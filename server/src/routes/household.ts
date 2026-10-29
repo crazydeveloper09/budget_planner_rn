@@ -2,9 +2,11 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import { randomInviteCode } from "../lib/crypto.js";
 import { publicE2e, publicEntries, publicHousehold, publicPeople, publicRecurring, publicUser } from "../lib/public.js";
+import { isExpoPushToken, sendExpoPush } from "../lib/push.js";
 import { notifyHousehold } from "../lib/realtime.js";
 import { requireAccess, type AuthedRequest } from "../middleware/auth.js";
 import { Household } from "../models/Household.js";
+import { Receipt } from "../models/Receipt.js";
 import { User } from "../models/User.js";
 
 const router = Router();
@@ -71,6 +73,104 @@ router.get("/me", requireAccess, async (req, res) => {
     entries: household ? publicEntries(household) : [],
     e2e: household ? publicE2e(household, user) : null,
   });
+});
+
+router.put("/me/push-token", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  const token = typeof req.body?.token === "string" ? req.body.token.trim() : "";
+  if (!isExpoPushToken(token)) {
+    res.status(400).json({ error: "Niepoprawny token powiadomień." });
+    return;
+  }
+  const user = await User.findById(authed.userId);
+  if (!user) {
+    res.status(401).json({ error: "Brak sesji. Zaloguj się ponownie." });
+    return;
+  }
+  user.expoPushTokens = Array.from(new Set([...(user.expoPushTokens ?? []), token])).slice(-5);
+  await user.save();
+  res.json({ ok: true });
+});
+
+router.delete("/me/push-token", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  const token =
+    typeof req.query.token === "string"
+      ? req.query.token.trim()
+      : typeof req.body?.token === "string"
+        ? req.body.token.trim()
+        : "";
+  const user = await User.findById(authed.userId);
+  if (!user) {
+    res.status(401).json({ error: "Brak sesji. Zaloguj się ponownie." });
+    return;
+  }
+  if (token) {
+    user.expoPushTokens = (user.expoPushTokens ?? []).filter((item) => item !== token);
+  } else {
+    user.expoPushTokens = [];
+  }
+  await user.save();
+  res.json({ ok: true });
+});
+
+router.post("/households/chat-notify", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  if (!authed.householdId) {
+    res.status(403).json({ error: "Brak powiązanego budżetu w chmurze." });
+    return;
+  }
+  const topicId = typeof req.body?.topicId === "string" ? req.body.topicId.trim().slice(0, 80) : "";
+  const topicTitle =
+    typeof req.body?.topicTitle === "string" && req.body.topicTitle.trim()
+      ? req.body.topicTitle.trim().slice(0, 80)
+      : "Czat";
+  const authorName =
+    typeof req.body?.authorName === "string" && req.body.authorName.trim()
+      ? req.body.authorName.trim().slice(0, 40)
+      : "Ktoś z domu";
+  const kind = req.body?.kind === "plan" ? "plan" : "message";
+  if (!topicId) {
+    res.status(400).json({ error: "Brak tematu." });
+    return;
+  }
+
+  const members = await User.find({
+    householdId: authed.householdId,
+    totpEnabled: true,
+    _id: { $ne: new mongoose.Types.ObjectId(authed.userId) },
+  }).select("expoPushTokens");
+  const tokens = Array.from(
+    new Set(members.flatMap((member) => member.expoPushTokens ?? []).filter(isExpoPushToken))
+  );
+  const body =
+    kind === "plan"
+      ? `${authorName} zaplanował kwotę w „${topicTitle}”`
+      : `${authorName} napisał w „${topicTitle}”`;
+  const tickets = await sendExpoPush(
+    tokens.map((to) => ({
+      to,
+      title: topicTitle,
+      body,
+      sound: "default",
+      channelId: "chat",
+      data: { type: "chat", topicId, title: topicTitle },
+    }))
+  );
+  const stale = new Set<string>();
+  tickets.forEach((ticket, index) => {
+    if (ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered") {
+      const token = tokens[index];
+      if (token) stale.add(token);
+    }
+  });
+  if (stale.size > 0) {
+    await User.updateMany(
+      { householdId: authed.householdId },
+      { $pull: { expoPushTokens: { $in: Array.from(stale) } } }
+    );
+  }
+  res.json({ ok: true });
 });
 
 router.get("/households/snapshot", requireAccess, async (req, res) => {
@@ -220,6 +320,93 @@ router.put("/households/snapshot", requireAccess, async (req, res) => {
   await household.save();
   notifyHousehold(authed.householdId);
   res.json(snapshot(household, true, user));
+});
+
+router.get("/households/receipts", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  if (!authed.householdId) {
+    res.status(404).json({ error: "Brak powiązanego budżetu w chmurze." });
+    return;
+  }
+  const items = await Receipt.find({ householdId: authed.householdId }).select(
+    "receiptId deleted updatedAt"
+  );
+  res.json({
+    receipts: items.map((item) => ({
+      id: item.receiptId,
+      deleted: Boolean(item.deleted),
+      updatedAt: item.updatedAt,
+    })),
+  });
+});
+
+router.get("/households/receipts/:receiptId", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  if (!authed.householdId) {
+    res.status(404).json({ error: "Brak powiązanego budżetu w chmurze." });
+    return;
+  }
+  const item = await Receipt.findOne({
+    householdId: authed.householdId,
+    receiptId: String(req.params.receiptId),
+  });
+  if (!item || item.deleted || !item.ciphertext) {
+    res.status(404).json({ error: "Nie znaleziono paragonu." });
+    return;
+  }
+  res.json({
+    id: item.receiptId,
+    nonce: item.nonce,
+    ciphertext: item.ciphertext,
+  });
+});
+
+router.put("/households/receipts/:receiptId", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  if (!authed.householdId) {
+    res.status(403).json({ error: "Brak powiązanego budżetu w chmurze." });
+    return;
+  }
+  const nonce = typeof req.body?.nonce === "string" ? req.body.nonce : "";
+  const ciphertext = typeof req.body?.ciphertext === "string" ? req.body.ciphertext : "";
+  if (nonce.length < 16 || ciphertext.length < 32) {
+    res.status(400).json({ error: "Niepoprawny zaszyfrowany paragon." });
+    return;
+  }
+  await Receipt.findOneAndUpdate(
+    { householdId: authed.householdId, receiptId: String(req.params.receiptId) },
+    {
+      householdId: authed.householdId,
+      receiptId: String(req.params.receiptId),
+      deleted: false,
+      nonce,
+      ciphertext,
+    },
+    { upsert: true, new: true }
+  );
+  notifyHousehold(authed.householdId);
+  res.json({ ok: true });
+});
+
+router.delete("/households/receipts/:receiptId", requireAccess, async (req, res) => {
+  const authed = req as AuthedRequest;
+  if (!authed.householdId) {
+    res.status(403).json({ error: "Brak powiązanego budżetu w chmurze." });
+    return;
+  }
+  await Receipt.findOneAndUpdate(
+    { householdId: authed.householdId, receiptId: String(req.params.receiptId) },
+    {
+      householdId: authed.householdId,
+      receiptId: String(req.params.receiptId),
+      deleted: true,
+      nonce: "",
+      ciphertext: "",
+    },
+    { upsert: true, new: true }
+  );
+  notifyHousehold(authed.householdId);
+  res.json({ ok: true });
 });
 
 router.post("/e2e/wraps", requireAccess, async (req, res) => {

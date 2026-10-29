@@ -92,6 +92,42 @@ async function migrate(database: Database) {
   if (!entryColumns.some((column) => column.name === "member_id")) {
     await database.execAsync("ALTER TABLE entries ADD COLUMN member_id INTEGER NOT NULL DEFAULT 0");
   }
+
+  await database.execAsync(`
+    CREATE TABLE IF NOT EXISTS chat_topics (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      created_at TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS chat_messages (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      topic_id TEXT NOT NULL,
+      author_name TEXT NOT NULL,
+      body TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL,
+      plan_json TEXT
+    );
+
+    CREATE TABLE IF NOT EXISTS receipts (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      entry_id INTEGER,
+      entry_date TEXT NOT NULL,
+      title TEXT NOT NULL DEFAULT '',
+      category TEXT NOT NULL,
+      amount REAL NOT NULL,
+      owner_name TEXT,
+      created_at TEXT NOT NULL,
+      file_name TEXT NOT NULL
+    );
+
+    CREATE TABLE IF NOT EXISTS receipt_tombstones (
+      id TEXT PRIMARY KEY
+    );
+  `);
 }
 
 export async function initDb() {

@@ -14,6 +14,7 @@ export type UserDoc = {
   totpSecretEnc: string | null;
   totpEnabled: boolean;
   familyMemberName: string | null;
+  expoPushTokens: string[];
 };
 
 const userSchema = new Schema<UserDoc>(
@@ -29,6 +30,7 @@ const userSchema = new Schema<UserDoc>(
     totpSecretEnc: { type: String, default: null },
     totpEnabled: { type: Boolean, default: false },
     familyMemberName: { type: String, default: null },
+    expoPushTokens: { type: [String], default: [] },
   },
   { timestamps: true }
 );

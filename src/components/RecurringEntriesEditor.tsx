@@ -74,17 +74,6 @@ export default function RecurringEntriesEditor({
           {showOwnerPicker ? (
             <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
           ) : null}
-          <CategoryPicker type={kind} value={category} onChange={setCategory} />
-          <TextInput
-            mode="outlined"
-            label="Nazwa (opcjonalnie)"
-            placeholder={kind === "expense" ? "np. Czynsz za mieszkanie" : "np. Pensja Ani"}
-            value={name}
-            onChangeText={setName}
-            style={styles.input}
-            outlineColor="#d7c8d3"
-            activeOutlineColor={accent}
-          />
           <TextInput
             mode="outlined"
             label="Kwota"
@@ -96,6 +85,17 @@ export default function RecurringEntriesEditor({
             outlineColor="#d7c8d3"
             activeOutlineColor={accent}
           />
+          <TextInput
+            mode="outlined"
+            label="Nazwa (opcjonalnie)"
+            placeholder={kind === "expense" ? "np. Czynsz za mieszkanie" : "np. Pensja Ani"}
+            value={name}
+            onChangeText={setName}
+            style={styles.input}
+            outlineColor="#d7c8d3"
+            activeOutlineColor={accent}
+          />
+          <CategoryPicker type={kind} value={category} onChange={setCategory} />
           <Button
             mode="outlined"
             onPress={submit}

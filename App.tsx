@@ -5,9 +5,12 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import ErrorBoundary from './src/components/ErrorBoundary';
 import { AuthProvider } from './src/contexts/AuthContext';
+import { ChatProvider } from './src/contexts/ChatContext';
 import { FinanceProvider } from './src/contexts/FinanceContext';
 import { ProfileProvider } from './src/contexts/ProfileContext';
 import { ThemeProvider } from './src/contexts/ThemeContext';
+import ChatPushListener from './src/notifications/ChatPushListener';
+import { navigationRef } from './src/navigators/navigationRef';
 import RootNavigator from './src/navigators/Root';
 
 export default function App() {
@@ -32,9 +35,12 @@ export default function App() {
             <AuthProvider>
               <ProfileProvider>
                 <FinanceProvider>
-                  <NavigationContainer>
-                    <RootNavigator />
-                  </NavigationContainer>
+                  <ChatProvider>
+                    <NavigationContainer ref={navigationRef}>
+                      <ChatPushListener />
+                      <RootNavigator />
+                    </NavigationContainer>
+                  </ChatProvider>
                 </FinanceProvider>
               </ProfileProvider>
             </AuthProvider>

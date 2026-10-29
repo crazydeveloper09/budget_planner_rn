@@ -1,16 +1,28 @@
 import React, { useMemo, useState } from "react";
-import { Alert, Pressable, ScrollView, StyleSheet, View } from "react-native";
+import {
+  Alert,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  View,
+} from "react-native";
 import CalendarPicker from "react-native-calendar-picker";
 import { Button, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { months, weekdays } from "../../../defaultData";
 import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
-import { TransactionType } from "../../db/interfaces";
+import { Receipt, TransactionType } from "../../db/interfaces";
+import { pickReceiptImage } from "../../helpers/receiptFiles";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
 import CategoryPicker from "../../components/CategoryPicker";
 import OwnerPicker from "../../components/OwnerPicker";
+import ReceiptAttach from "../../components/ReceiptAttach";
+import ReceiptPreviewModal from "../../components/ReceiptPreviewModal";
 import { useAccent } from "../../contexts/ThemeContext";
 import { ownerLabel } from "../../helpers/owners";
 import { howManySaved, totalExpenses, totalIncomings } from "./helpers/countSum";
@@ -18,13 +30,15 @@ import { howManySaved, totalExpenses, totalIncomings } from "./helpers/countSum"
 const ExpensesIndexScreen: React.FC = () => {
   const { accent, surfaces } = useAccent();
   const { profile, members } = useProfile();
-  const { entries, addEntry, removeEntry } = useFinance();
+  const { entries, receipts, addEntry, removeEntry, addReceiptsToEntry, removeReceipt } = useFinance();
   const [selectedStartDate, setSelectedStartDate] = useState<Date>(new Date());
   const [formType, setFormType] = useState<TransactionType | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [memberId, setMemberId] = useState<number | null>(null);
+  const [pendingReceipts, setPendingReceipts] = useState<string[]>([]);
+  const [openReceipt, setOpenReceipt] = useState<Receipt | null>(null);
   const isFamily = profile?.accountType === "family";
 
   const selectedIso = toIsoDate(selectedStartDate);
@@ -49,21 +63,25 @@ const ExpensesIndexScreen: React.FC = () => {
     setAmount("");
     setMemberId(null);
     setFormType(null);
+    setPendingReceipts([]);
   };
 
   const saveEntry = async () => {
     const parsed = parseAmount(amount);
     if (!formType || !category || parsed === null) return;
     try {
-      await addEntry({
-        date: selectedIso,
-        type: formType,
-        name: name.trim(),
-        category,
-        amount: parsed,
-        regular: false,
-        memberId,
-      });
+      await addEntry(
+        {
+          date: selectedIso,
+          type: formType,
+          name: name.trim(),
+          category,
+          amount: parsed,
+          regular: false,
+          memberId,
+        },
+        { receiptUris: formType === "expense" ? pendingReceipts : undefined }
+      );
       resetForm();
     } catch (error) {
       console.error(error);
@@ -77,7 +95,13 @@ const ExpensesIndexScreen: React.FC = () => {
   };
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <ScrollView
+      style={styles.container}
+      contentContainerStyle={styles.content}
+      keyboardShouldPersistTaps="handled"
+      keyboardDismissMode="interactive"
+    >
       <CalendarPicker
         key={accent}
         startFromMonday={true}
@@ -126,17 +150,6 @@ const ExpensesIndexScreen: React.FC = () => {
           {isFamily ? (
             <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
           ) : null}
-          <CategoryPicker type={formType} value={category} onChange={setCategory} />
-          <TextInput
-            mode="outlined"
-            label="Nazwa (opcjonalnie)"
-            placeholder={formType === "expense" ? "np. Lidl" : "np. Premia za kwartał"}
-            value={name}
-            onChangeText={setName}
-            style={styles.input}
-            outlineColor="#d7c8d3"
-            activeOutlineColor={accent}
-          />
           <TextInput
             mode="outlined"
             label="Kwota"
@@ -148,6 +161,20 @@ const ExpensesIndexScreen: React.FC = () => {
             outlineColor="#d7c8d3"
             activeOutlineColor={accent}
           />
+          <TextInput
+            mode="outlined"
+            label="Nazwa (opcjonalnie)"
+            placeholder={formType === "expense" ? "np. Lidl" : "np. Premia za kwartał"}
+            value={name}
+            onChangeText={setName}
+            style={styles.input}
+            outlineColor="#d7c8d3"
+            activeOutlineColor={accent}
+          />
+          <CategoryPicker type={formType} value={category} onChange={setCategory} />
+          {formType === "expense" ? (
+            <ReceiptAttach uris={pendingReceipts} onChange={setPendingReceipts} />
+          ) : null}
           <Button
             mode="contained"
             onPress={saveEntry}
@@ -175,35 +202,77 @@ const ExpensesIndexScreen: React.FC = () => {
           <Text style={styles.empty}>Nie dodano wydatków ani wpływów na dany dzień</Text>
         ) : (
           <View style={styles.list}>
-            {dayEntries.map((item) => (
+            {dayEntries.map((item) => {
+              const itemReceipts = receipts.filter((receipt) => receipt.entryId === item.id);
+              const firstReceipt = itemReceipts[0];
+              return (
               <View key={item.id} style={[styles.row, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}>
+                {firstReceipt ? (
+                  <Pressable onPress={() => setOpenReceipt(firstReceipt)}>
+                    <Image source={{ uri: firstReceipt.uri }} style={styles.rowThumb} />
+                  </Pressable>
+                ) : null}
                 <View style={styles.rowCopy}>
                   <Text style={styles.rowTitle}>{item.name || item.category}</Text>
                   <Text style={styles.rowMeta}>
                     {item.category} · {item.type === "expense" ? "Wydatek" : "Wpływ"} · {formatPln(item.amount)}
                     {isFamily ? ` · ${ownerLabel(item.memberId, members)}` : ""}
+                    {itemReceipts.length > 1 ? ` · ${itemReceipts.length} paragony` : ""}
                   </Text>
                 </View>
+                {item.type === "expense" ? (
+                  <Pressable
+                    onPress={() => {
+                      void (async () => {
+                        const uri = await pickReceiptImage();
+                        if (uri) await addReceiptsToEntry(item, [uri]);
+                      })();
+                    }}
+                    hitSlop={8}
+                  >
+                    <MaterialCommunityIcons name="camera-plus-outline" size={22} color={accent} />
+                  </Pressable>
+                ) : null}
                 <Pressable onPress={() => removeEntry(item.id)} hitSlop={8}>
                   <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
                 </Pressable>
               </View>
-            ))}
+            );
+            })}
           </View>
         )}
       </View>
     </ScrollView>
+    <ReceiptPreviewModal
+      receipt={openReceipt}
+      onClose={() => setOpenReceipt(null)}
+      onDelete={(id) => {
+        Alert.alert("Usunąć paragon?", "Zdjęcie zniknie z wydatku i z zakładki Paragony.", [
+          { text: "Anuluj", style: "cancel" },
+          {
+            text: "Usuń",
+            style: "destructive",
+            onPress: () => {
+              setOpenReceipt(null);
+              void removeReceipt(id);
+            },
+          },
+        ]);
+      }}
+    />
+    </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
+  flex: { flex: 1, backgroundColor: "#fff" },
   container: {
     flex: 1,
     backgroundColor: "#fff",
   },
   content: {
     padding: 15,
-    paddingBottom: 32,
+    paddingBottom: 120,
   },
   actions: {
     flexDirection: "row",
@@ -270,6 +339,12 @@ const styles = StyleSheet.create({
     borderRadius: 14,
     padding: 12,
     backgroundColor: "#fdf8fb",
+  },
+  rowThumb: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    backgroundColor: "#eadfe6",
   },
   rowCopy: {
     flex: 1,
