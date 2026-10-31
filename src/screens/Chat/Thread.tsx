@@ -15,11 +15,13 @@ import DateTimePickerModal from "react-native-modal-datetime-picker";
 import CategoryPicker from "../../components/CategoryPicker";
 import OwnerPicker from "../../components/OwnerPicker";
 import { useChat } from "../../contexts/ChatContext";
+import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
 import { useAccent } from "../../contexts/ThemeContext";
 import { ChatPlan, TransactionType } from "../../db/interfaces";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
+import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
 import { ownerLabel } from "../../helpers/owners";
 import { setActiveChatTopic } from "../../notifications/chatPush";
 
@@ -42,6 +44,7 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
   const headerHeight = useHeaderHeight();
   const { accent, surfaces } = useAccent();
   const { members, profile } = useProfile();
+  const { entries } = useFinance();
   const { messages, sendMessage, sendPlan } = useChat();
   const scrollRef = useRef<ScrollView>(null);
   const [draft, setDraft] = useState("");
@@ -93,6 +96,12 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
       Alert.alert("Uzupełnij plan", "Kategoria i kwota są potrzebne.");
       return;
     }
+    const ok = await confirmIfOverBudget({
+      remaining: remainingAfterDay(profile, entries, planDate),
+      amount,
+      isExpense: planType === "expense",
+    });
+    if (!ok) return;
     const plan: ChatPlan = {
       type: planType,
       name: planName.trim(),

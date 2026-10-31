@@ -21,6 +21,7 @@ import { useProfile } from "../../contexts/ProfileContext";
 import { useAccent } from "../../contexts/ThemeContext";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
+import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
 
 type AddReceiptModalProps = {
   visible: boolean;
@@ -40,6 +41,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
   const { accent, surfaces } = useAccent();
   const { profile, members } = useProfile();
   const { entries, addEntry, addReceiptsToEntry } = useFinance();
+  const leftover = remainingAfterDay(profile, entries, date);
   const isFamily = profile?.accountType === "family";
   const [uris, setUris] = useState<string[]>([]);
   const [date, setDate] = useState(toIsoDate(new Date()));
@@ -91,6 +93,12 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
       } else {
         const parsed = parseAmount(amount);
         if (!category || parsed === null) return;
+        const ok = await confirmIfOverBudget({
+          remaining: leftover,
+          amount: parsed,
+          isExpense: true,
+        });
+        if (!ok) return;
         await addEntry(
           {
             date,

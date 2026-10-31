@@ -457,18 +457,19 @@ router.post("/e2e/wraps", requireAccess, async (req, res) => {
   }
   household.markModified("e2e");
   await household.save();
+  notifyHousehold(authed.householdId);
   res.json({ ok: true });
 });
 
 router.post("/households/invites", requireAccess, async (req, res) => {
   const authed = req as AuthedRequest;
   if (authed.role !== "owner" || !authed.householdId) {
-    res.status(403).json({ error: "Tylko konto główne może zapraszać członków rodziny." });
+    res.status(403).json({ error: "Tylko konto główne może zapraszać." });
     return;
   }
   const name = typeof req.body?.name === "string" ? req.body.name.trim() : "";
   if (name.length < 2) {
-    res.status(400).json({ error: "Wybierz członka rodziny." });
+    res.status(400).json({ error: "Wybierz osobę z listy." });
     return;
   }
   const household = await Household.findById(authed.householdId);
@@ -478,7 +479,7 @@ router.post("/households/invites", requireAccess, async (req, res) => {
   }
   const person = household.people.find((item) => item.name === name);
   if (!person) {
-    res.status(404).json({ error: "Najpierw dodaj tę osobę do rodziny." });
+    res.status(404).json({ error: "Najpierw dodaj tę osobę do listy." });
     return;
   }
   if (person.linkedUserId) {

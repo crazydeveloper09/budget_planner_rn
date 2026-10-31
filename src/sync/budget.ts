@@ -4,8 +4,9 @@ import { BudgetPlaintext, decryptBudget, encryptBudget } from "../crypto/e2e";
 import { loadDek, requireDek } from "../crypto/keystore";
 import { Member, Transaction, User } from "../db/interfaces";
 import { listChatMessages, listChatTopics, replaceChat } from "../db/chat";
+import { listGoals, replaceGoals } from "../db/goals";
 import { listMembers, replaceMembers } from "../db/members";
-import { createProfile, getProfile, updateProfile } from "../db/profile";
+import { createProfile, getProfile, setCloudProfileId, updateProfile } from "../db/profile";
 import { listTransactions, replaceAllTransactions } from "../db/transactions";
 import { ownerLabel } from "../helpers/owners";
 import { downloadRemoteReceipts, migrateEmbeddedReceipts, uploadLocalReceipts } from "./receipts";
@@ -16,6 +17,10 @@ type SnapshotResponse = {
     accountType: User["accountType"];
     dailySaldo?: number;
     encrypted?: boolean;
+    walletBalance?: number | null;
+    walletSetOn?: string | null;
+    walletAfterId?: number;
+    walletRecurringMonth?: string | null;
   };
   people: CloudFamilyPerson[];
   entries: CloudEntry[];
@@ -44,12 +49,17 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
   const entries = await listTransactions(profile.id);
   const topics = await listChatTopics(profile.id);
   const messages = await listChatMessages(profile.id);
+  const goals = await listGoals(profile.id);
   const dek = await requireDek();
   const e2e = encryptBudget(dek, {
     profile: {
       name: profile.name,
       accountType: profile.accountType,
       dailySaldo: profile.dailySaldo,
+      walletBalance: profile.walletBalance,
+      walletSetOn: profile.walletSetOn,
+      walletAfterId: profile.walletAfterId,
+      walletRecurringMonth: profile.walletRecurringMonth,
     },
     people: people.map((person) => ({
       name: person.name,
@@ -58,6 +68,14 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
       salary: person.salary,
     })),
     entries: toCloudEntries(entries, people),
+    goals: goals.map((goal) => ({
+      id: goal.id,
+      title: goal.title,
+      targetAmount: goal.targetAmount,
+      savedAmount: goal.savedAmount,
+      deadline: goal.deadline,
+      createdAt: goal.createdAt,
+    })),
     chat: {
       topics: topics.map((topic) => ({
         id: topic.id,
@@ -103,6 +121,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
     entries: CloudEntry[];
     chat?: BudgetPlaintext["chat"];
     receipts?: BudgetPlaintext["receipts"];
+    goals?: BudgetPlaintext["goals"];
   } = {
     household: data.household,
     people: data.people ?? [],
@@ -121,6 +140,10 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
         accountType: plain.profile.accountType,
         dailySaldo: plain.profile.dailySaldo,
         encrypted: true,
+        walletBalance: plain.profile.walletBalance,
+        walletSetOn: plain.profile.walletSetOn,
+        walletAfterId: plain.profile.walletAfterId,
+        walletRecurringMonth: plain.profile.walletRecurringMonth,
       },
       people: (plain.people ?? []).map((person) => {
         const cloud = (data.people ?? []).find((item) => item.name === person.name);
@@ -136,21 +159,34 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
       entries: plain.entries ?? [],
       chat: plain.chat,
       receipts: plain.receipts,
+      goals: plain.goals,
     };
   }
 
   let profile = await getProfile();
   if (!profile) {
-    profile = await createProfile({
-      name: snapshot.household.name,
-      accountType: snapshot.household.accountType,
-    });
+    profile = await createProfile(
+      {
+        name: snapshot.household.name,
+        accountType: snapshot.household.accountType,
+        walletBalance: snapshot.household.walletBalance,
+        walletSetOn: snapshot.household.walletSetOn,
+        walletAfterId: snapshot.household.walletAfterId,
+        walletRecurringMonth: snapshot.household.walletRecurringMonth,
+      },
+      { linkCloud: true }
+    );
   } else {
+    await setCloudProfileId(profile.id);
     profile =
       (await updateProfile(profile.id, {
         name: snapshot.household.name,
         accountType: snapshot.household.accountType,
         dailySaldo: snapshot.household.dailySaldo,
+        walletBalance: snapshot.household.walletBalance,
+        walletSetOn: snapshot.household.walletSetOn,
+        walletAfterId: snapshot.household.walletAfterId,
+        walletRecurringMonth: snapshot.household.walletRecurringMonth,
       })) ?? profile;
   }
 
@@ -185,6 +221,19 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
     await downloadRemoteReceipts(profile.id, storedEntries);
   } catch {
     // stare API albo brak sieci: zostają lokalne / zmigrowane paragony
+  }
+  if (snapshot.goals) {
+    await replaceGoals(
+      profile.id,
+      snapshot.goals.map((goal) => ({
+        id: goal.id,
+        title: goal.title,
+        targetAmount: goal.targetAmount,
+        savedAmount: goal.savedAmount,
+        deadline: goal.deadline ?? null,
+        createdAt: goal.createdAt,
+      }))
+    );
   }
   if (snapshot.chat) {
     await replaceChat(

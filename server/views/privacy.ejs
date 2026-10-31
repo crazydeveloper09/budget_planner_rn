@@ -1,0 +1,67 @@
+<!DOCTYPE html>
+<html lang="pl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Polityka prywatności · <%= appName %></title>
+    <style>
+      :root {
+        --accent: #702963;
+        --ink: #1f1220;
+        --muted: #6b5f6a;
+        --bg: #fff8fb;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: "Segoe UI", system-ui, sans-serif;
+        color: var(--ink);
+        background: var(--bg);
+        line-height: 1.6;
+      }
+      header {
+        background: var(--accent);
+        color: #fff;
+        padding: 28px 20px 24px;
+      }
+      header p {
+        margin: 8px 0 0;
+        opacity: 0.9;
+        font-size: 14px;
+      }
+      main {
+        max-width: 720px;
+        margin: 0 auto;
+        padding: 28px 20px 64px;
+      }
+      h1 { margin: 0; font-size: 28px; }
+      h2 { font-size: 18px; margin: 28px 0 8px; }
+      p { margin: 0 0 12px; color: #3d323c; }
+      a { color: var(--accent); }
+      footer {
+        margin-top: 36px;
+        font-size: 13px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>Polityka prywatności</h1>
+      <p><%= appName %> · aktualizacja: <%= updatedAt %></p>
+    </header>
+    <main>
+      <p><%= intro %></p>
+      <% sections.forEach(function (section) { %>
+        <h2><%= section.title %></h2>
+        <% section.paragraphs.forEach(function (paragraph) { %>
+          <p><%= paragraph %></p>
+        <% }); %>
+      <% }); %>
+      <footer>
+        Kontakt: <a href="mailto:<%= email %>"><%= email %></a><br />
+        Stworzone z ❤️ przez Maciej Solutions
+      </footer>
+    </main>
+  </body>
+</html>

@@ -1,20 +1,37 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from "react";
 import { AppState } from "react-native";
-import { AccountType, Member, NewMember, User } from "../db/interfaces";
+import { AccountType, Goal, Member, NewMember, User } from "../db/interfaces";
 import { initDb } from "../db/init";
+import {
+  addGoal as insertGoal,
+  listGoals,
+  removeGoal as deleteGoal,
+  updateGoal as patchGoal,
+} from "../db/goals";
 import { addMember as insertMember, addMembers, listMembers, removeMember as deleteMember } from "../db/members";
-import { createProfile, getProfile } from "../db/profile";
+import {
+  createProfile,
+  getProfile,
+  listProfiles,
+  setActiveProfileId,
+  updateProfile,
+} from "../db/profile";
 import { listChatMessages, listChatTopics } from "../db/chat";
 import { listReceipts } from "../db/receipts";
 import { listTransactions } from "../db/transactions";
+import { monthKey, toIsoDate } from "../helpers/dates";
+import { applyMonthlyRecurringIfDue } from "../helpers/monthlyRecurring";
+import { tokenKey } from "../auth/profileSession";
 import * as SecureStore from "expo-secure-store";
 import { pullCloudBudgetIntoSqlite } from "../sync/budget";
 import { connectLiveSync, disconnectLiveSync } from "../sync/liveSocket";
-import { TOKEN_KEY, useAuth } from "./AuthContext";
+import { useAuth } from "./AuthContext";
 
 type ProfileContextValue = {
   profile: User | null;
+  profiles: User[];
   members: Member[];
+  goals: Goal[];
   isReady: boolean;
   canAdmin: boolean;
   ledgerStamp: number;
@@ -22,17 +39,35 @@ type ProfileContextValue = {
     name: string;
     accountType: AccountType;
     members?: NewMember[];
+    walletBalance?: number | null;
+  }) => Promise<void>;
+  switchAccount: (id: number) => Promise<void>;
+  addAccount: (input: {
+    name: string;
+    accountType: AccountType;
+    walletBalance: number;
   }) => Promise<void>;
   addMember: (member: NewMember) => Promise<Member | undefined>;
   removeMember: (id: number) => Promise<void>;
+  setWalletBalance: (amount: number) => Promise<void>;
+  setDailySaldo: (amount: number) => Promise<void>;
+  setProfileName: (name: string) => Promise<void>;
+  addGoal: (input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => Promise<void>;
+  updateGoal: (
+    id: string,
+    input: { title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
+  ) => Promise<void>;
+  removeGoal: (id: string) => Promise<void>;
 };
 
 const ProfileContext = createContext<ProfileContextValue | undefined>(undefined);
 
 export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { isReady: authReady, user, household, createHousehold, pushBudget } = useAuth();
+  const { isReady: authReady, user, household, createHousehold, pushBudget, activateForProfile } = useAuth();
   const [profile, setProfile] = useState<User | null>(null);
+  const [profiles, setProfiles] = useState<User[]>([]);
   const [members, setMembers] = useState<Member[]>([]);
+  const [goals, setGoals] = useState<Goal[]>([]);
   const [isReady, setIsReady] = useState(false);
   const [ledgerStamp, setLedgerStamp] = useState(0);
   const snapshotRef = useRef("");
@@ -41,12 +76,14 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const canAdmin = user?.role !== "member";
 
   const loadFromSqlite = useCallback(async () => {
+    const all = await listProfiles();
     const existing = await getProfile();
     const existingMembers = existing ? await listMembers(existing.id) : [];
-    return { existing, existingMembers };
+    const existingGoals = existing ? await listGoals(existing.id) : [];
+    return { existing, existingMembers, existingGoals, all };
   }, []);
 
-  const snapshotOf = useCallback(async (existing: User | null, existingMembers: Member[]) => {
+  const snapshotOf = useCallback(async (existing: User | null, existingMembers: Member[], existingGoals: Goal[]) => {
     const entries = existing ? await listTransactions(existing.id) : [];
     const topics = existing ? await listChatTopics(existing.id) : [];
     const messages = existing ? await listChatMessages(existing.id) : [];
@@ -54,6 +91,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return JSON.stringify({
       profile: existing,
       members: existingMembers,
+      goals: existingGoals,
       entries: entries.map((entry) => [
         entry.id,
         entry.date,
@@ -70,12 +108,14 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, []);
 
   const applySqlite = useCallback(async () => {
-    const { existing, existingMembers } = await loadFromSqlite();
-    const next = await snapshotOf(existing, existingMembers);
+    const { existing, existingMembers, existingGoals, all } = await loadFromSqlite();
+    const next = await snapshotOf(existing, existingMembers, existingGoals);
     if (next === snapshotRef.current) return existing;
     snapshotRef.current = next;
     setProfile(existing);
+    setProfiles(all);
     setMembers(existingMembers);
+    setGoals(existingGoals);
     setLedgerStamp((current) => current + 1);
     return existing;
   }, [loadFromSqlite, snapshotOf]);
@@ -116,19 +156,37 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
           }
         }
 
-        let { existing, existingMembers } = await loadFromSqlite();
+        let { existing, existingMembers, existingGoals, all } = await loadFromSqlite();
         if (!existing && household && user?.role === "member") {
-          existing = await createProfile({
-            name: household.name,
-            accountType: household.accountType,
-          });
+          existing = await createProfile(
+            {
+              name: household.name,
+              accountType: household.accountType,
+            },
+            { linkCloud: true }
+          );
           existingMembers = [];
+          existingGoals = [];
+          all = [existing];
+        }
+
+        if (existing) {
+          await activateForProfile(existing.id);
+        }
+
+        if (existing) {
+          const posted = await applyMonthlyRecurringIfDue();
+          if (posted) {
+            ({ existing, existingMembers, existingGoals, all } = await loadFromSqlite());
+          }
         }
 
         if (isMounted) {
-          snapshotRef.current = await snapshotOf(existing, existingMembers);
+          snapshotRef.current = await snapshotOf(existing, existingMembers, existingGoals);
           setProfile(existing);
+          setProfiles(all);
           setMembers(existingMembers);
+          setGoals(existingGoals);
           setLedgerStamp((current) => current + 1);
         }
 
@@ -147,13 +205,13 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return () => {
       isMounted = false;
     };
-  }, [authReady, household?.id, user?.id, user?.role, loadFromSqlite, pushBudget, snapshotOf]);
+  }, [authReady, household?.id, user?.id, user?.role, activateForProfile, loadFromSqlite, pushBudget, snapshotOf]);
 
   useEffect(() => {
     if (!isReady || !user) return;
 
     let cancelled = false;
-    void SecureStore.getItemAsync(TOKEN_KEY).then((token) => {
+    void SecureStore.getItemAsync(tokenKey()).then((token) => {
       if (!token || cancelled) return;
       connectLiveSync(token, () => {
         void pullLive();
@@ -162,11 +220,18 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     const onAppState = (state: string) => {
       if (state !== "active") return;
-      if (user.role === "owner") {
-        void pushBudget();
-        return;
-      }
-      void pullLive();
+      void (async () => {
+        if (user.role === "member") await pullLive();
+        const posted = await applyMonthlyRecurringIfDue();
+        if (posted) await applySqlite();
+        if (user.role === "owner" || posted) {
+          try {
+            await pushBudget();
+          } catch {
+            // offline: local posting stays
+          }
+        }
+      })();
     };
     const sub = AppState.addEventListener("change", onAppState);
 
@@ -175,12 +240,13 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       disconnectLiveSync();
       sub.remove();
     };
-  }, [isReady, user, pullLive, pushBudget]);
+  }, [isReady, user, pullLive, pushBudget, applySqlite]);
 
   const completeOnboarding = useCallback(async (input: {
     name: string;
     accountType: AccountType;
     members?: NewMember[];
+    walletBalance?: number | null;
   }) => {
     if (user && !household) {
       await createHousehold({
@@ -189,12 +255,31 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       });
     }
     const existing = await getProfile();
+    const entries = existing ? await listTransactions(existing.id) : [];
+    const afterId = entries.reduce((max, entry) => Math.max(max, entry.id), 0);
+    const walletBalance = input.walletBalance ?? null;
     const created =
-      existing ??
-      (await createProfile({
-        name: input.name,
-        accountType: input.accountType,
-      }));
+      existing
+        ? (await updateProfile(existing.id, {
+            name: input.name,
+            accountType: input.accountType,
+            walletBalance,
+            walletSetOn: walletBalance == null ? null : toIsoDate(new Date()),
+            walletAfterId: afterId,
+            walletRecurringMonth: monthKey(),
+          })) ?? existing
+        : await createProfile(
+            {
+              name: input.name,
+              accountType: input.accountType,
+              walletBalance,
+              walletSetOn: walletBalance == null ? null : toIsoDate(new Date()),
+              walletAfterId: afterId,
+              walletRecurringMonth: monthKey(),
+            },
+            { linkCloud: true }
+          );
+    await activateForProfile(created.id);
     const savedMembers =
       existing
         ? await listMembers(created.id)
@@ -202,13 +287,66 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
           ? await addMembers(created.id, input.members)
           : [];
     setProfile(created);
+    setProfiles(await listProfiles());
     setMembers(savedMembers);
+    setGoals([]);
     try {
       await pushBudget();
     } catch {
       // local profile is already saved
     }
-  }, [createHousehold, household, pushBudget, user]);
+  }, [activateForProfile, createHousehold, household, pushBudget, user]);
+
+  const applyActive = useCallback(async () => {
+    const { existing, existingMembers, existingGoals, all } = await loadFromSqlite();
+    snapshotRef.current = await snapshotOf(existing, existingMembers, existingGoals);
+    setProfile(existing);
+    setProfiles(all);
+    setMembers(existingMembers);
+    setGoals(existingGoals);
+    setLedgerStamp((current) => current + 1);
+    const posted = await applyMonthlyRecurringIfDue();
+    if (posted) {
+      const again = await loadFromSqlite();
+      snapshotRef.current = await snapshotOf(again.existing, again.existingMembers, again.existingGoals);
+      setProfile(again.existing);
+      setProfiles(again.all);
+      setMembers(again.existingMembers);
+      setGoals(again.existingGoals);
+      setLedgerStamp((current) => current + 1);
+    }
+  }, [loadFromSqlite, snapshotOf]);
+
+  const switchAccount = useCallback(
+    async (id: number) => {
+      disconnectLiveSync();
+      await setActiveProfileId(id);
+      await activateForProfile(id);
+      await applyActive();
+    },
+    [activateForProfile, applyActive]
+  );
+
+  const addAccount = useCallback(
+    async (input: { name: string; accountType: AccountType; walletBalance: number }) => {
+      const existingOfType = (await listProfiles()).find((item) => item.accountType === input.accountType);
+      if (existingOfType) {
+        await switchAccount(existingOfType.id);
+        return;
+      }
+      const created = await createProfile({
+        name: input.name,
+        accountType: input.accountType,
+        walletBalance: input.walletBalance,
+        walletSetOn: toIsoDate(new Date()),
+        walletAfterId: 0,
+        walletRecurringMonth: monthKey(),
+      });
+      await activateForProfile(created.id);
+      await applyActive();
+    },
+    [activateForProfile, applyActive, switchAccount]
+  );
 
   const addMember = useCallback(async (member: NewMember) => {
     if (!profile) return;
@@ -221,6 +359,105 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     }
     return created;
   }, [profile, pushBudget]);
+
+  const setWalletBalance = useCallback(async (amount: number) => {
+    if (!profile) return;
+    const entries = await listTransactions(profile.id);
+    const afterId = entries.reduce((max, entry) => Math.max(max, entry.id), 0);
+    const updated = await updateProfile(profile.id, {
+      walletBalance: amount,
+      walletSetOn: toIsoDate(new Date()),
+      walletAfterId: afterId,
+    });
+    if (updated) setProfile(updated);
+    try {
+      await pushBudget();
+    } catch {
+      // local wallet stays
+    }
+  }, [profile, pushBudget]);
+
+  const setDailySaldo = useCallback(async (amount: number) => {
+    if (!profile) return;
+    const updated = await updateProfile(profile.id, { dailySaldo: amount });
+    if (updated) setProfile(updated);
+    try {
+      await pushBudget();
+    } catch {
+      // local limit stays
+    }
+  }, [profile, pushBudget]);
+
+  const setProfileName = useCallback(async (name: string) => {
+    if (!profile) return;
+    const trimmed = name.trim();
+    if (!trimmed) return;
+    const updated = await updateProfile(profile.id, { name: trimmed });
+    if (updated) {
+      setProfile(updated);
+      setProfiles(await listProfiles());
+    }
+    try {
+      await pushBudget();
+    } catch {
+      // local name stays
+    }
+  }, [profile, pushBudget]);
+
+  const addGoal = useCallback(
+    async (input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => {
+      if (!profile) return;
+      const created = await insertGoal(profile.id, input);
+      setGoals((current) => [created, ...current]);
+      try {
+        await pushBudget();
+      } catch {
+        // local goal stays
+      }
+    },
+    [profile, pushBudget]
+  );
+
+  const updateGoal = useCallback(
+    async (
+      id: string,
+      input: { title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
+    ) => {
+      await patchGoal(id, input);
+      setGoals((current) =>
+        current.map((goal) =>
+          goal.id === id
+            ? {
+                ...goal,
+                title: input.title?.trim() || goal.title,
+                targetAmount: input.targetAmount ?? goal.targetAmount,
+                savedAmount: input.savedAmount ?? goal.savedAmount,
+                deadline: input.deadline === undefined ? goal.deadline : input.deadline,
+              }
+            : goal
+        )
+      );
+      try {
+        await pushBudget();
+      } catch {
+        // local update stays
+      }
+    },
+    [pushBudget]
+  );
+
+  const removeGoal = useCallback(
+    async (id: string) => {
+      await deleteGoal(id);
+      setGoals((current) => current.filter((goal) => goal.id !== id));
+      try {
+        await pushBudget();
+      } catch {
+        // local delete stays
+      }
+    },
+    [pushBudget]
+  );
 
   const removeMember = useCallback(async (id: number) => {
     await deleteMember(id);
@@ -235,15 +472,44 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const value = useMemo(
     () => ({
       profile,
+      profiles,
       members,
+      goals,
       isReady,
       canAdmin,
       ledgerStamp,
       completeOnboarding,
+      switchAccount,
+      addAccount,
       addMember,
       removeMember,
+      setWalletBalance,
+      setDailySaldo,
+      setProfileName,
+      addGoal,
+      updateGoal,
+      removeGoal,
     }),
-    [profile, members, isReady, canAdmin, ledgerStamp, completeOnboarding, addMember, removeMember]
+    [
+      profile,
+      profiles,
+      members,
+      goals,
+      isReady,
+      canAdmin,
+      ledgerStamp,
+      completeOnboarding,
+      switchAccount,
+      addAccount,
+      addMember,
+      removeMember,
+      setWalletBalance,
+      setDailySaldo,
+      setProfileName,
+      addGoal,
+      updateGoal,
+      removeGoal,
+    ]
   );
 
   return <ProfileContext.Provider value={value}>{children}</ProfileContext.Provider>;

@@ -1,23 +1,41 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
 import { useAccent } from "../../contexts/ThemeContext";
-import { buildFamilyMonthStats } from "../../helpers/familyStats";
+import { useNavigation } from "@react-navigation/native";
+import { buildFamilyMonthStats, entriesInMonth, spendByCategory } from "../../helpers/familyStats";
+import { personalSpendComment } from "../../helpers/spendComment";
 import { formatMonthLabel, monthKeyFromDate, shiftMonth } from "../../helpers/monthKey";
 import { formatPln } from "../../helpers/money";
 
 const RankingsScreen: React.FC = () => {
+  const navigation = useNavigation();
   const { accent, surfaces } = useAccent();
-  const { members } = useProfile();
+  const { members, profile } = useProfile();
   const { entries } = useFinance();
+  const isFamily = profile?.accountType === "family";
   const currentMonth = monthKeyFromDate(new Date());
   const [month, setMonth] = useState(currentMonth);
-  const stats = useMemo(() => buildFamilyMonthStats(entries, members, month), [entries, members, month]);
+  const stats = useMemo(() => {
+    if (isFamily) return buildFamilyMonthStats(entries, members, month);
+    const { categories, totalExpenses, totalIncome } = spendByCategory(entriesInMonth(entries, month));
+    return { awards: [], categories, totalExpenses, totalIncome };
+  }, [entries, isFamily, members, month]);
+  const comment = useMemo(
+    () => (isFamily ? null : personalSpendComment(stats.categories, stats.totalExpenses, month)),
+    [isFamily, month, stats.categories, stats.totalExpenses]
+  );
   const maxCategory = stats.categories[0]?.amount ?? 0;
   const canGoNext = month < currentMonth;
+
+  useEffect(() => {
+    navigation.setOptions({
+      headerTitle: isFamily ? "Ranking rodziny" : "Podsumowanie miesiąca",
+    });
+  }, [isFamily, navigation]);
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
@@ -41,7 +59,11 @@ const RankingsScreen: React.FC = () => {
         {stats.totalIncome > 0 ? ` · wpływy ${formatPln(stats.totalIncome)}` : ""}
       </Text>
       {stats.categories.length === 0 ? (
-        <Text style={styles.empty}>Jeszcze pusto. Dodajcie wydatki, kategorie same się poukładają.</Text>
+        <Text style={styles.empty}>
+          {isFamily
+            ? "Jeszcze pusto. Dodajcie wydatki, kategorie same się poukładają."
+            : "Jeszcze pusto. Dodaj wydatek, a kategorie same się poukładają."}
+        </Text>
       ) : (
         <View style={styles.catList}>
           {stats.categories.map((item) => (
@@ -70,7 +92,14 @@ const RankingsScreen: React.FC = () => {
           ))}
         </View>
       )}
+      {comment ? (
+        <View style={[styles.commentCard, { backgroundColor: surfaces.surface }]}>
+          <Text style={styles.comment}>{comment}</Text>
+        </View>
+      ) : null}
 
+      {isFamily ? (
+        <>
       <Text style={[styles.kicker, styles.awardsKicker]}>Podium rodziny</Text>
       <Text style={styles.deck}>Medale za charakter. I za paragon.</Text>
       {stats.awards.map((award) => (
@@ -88,6 +117,8 @@ const RankingsScreen: React.FC = () => {
             : null}
         </View>
       ))}
+        </>
+      ) : null}
     </ScrollView>
   );
 };
@@ -133,6 +164,18 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#1f1220",
     marginBottom: 14,
+  },
+  commentCard: {
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  comment: {
+    fontFamily: "PoppinsRegular",
+    fontSize: 15,
+    color: "#1f1220",
+    lineHeight: 22,
   },
   empty: {
     fontFamily: "PoppinsRegular",

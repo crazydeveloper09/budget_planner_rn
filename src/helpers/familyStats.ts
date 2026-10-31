@@ -208,9 +208,25 @@ export function buildFamilyMonthStats(
     ),
   ];
 
-  const expenseEntries = monthEntries.filter((entry) => entry.type === "expense");
+  const { categories } = spendByCategory(monthEntries);
+
+  return { awards, categories, totalExpenses, totalIncome };
+}
+
+export function spendByCategory(entries: Transaction[]): {
+  categories: CategorySpend[];
+  totalExpenses: number;
+  totalIncome: number;
+} {
+  const totalExpenses = entries
+    .filter((entry) => entry.type === "expense")
+    .reduce((sum, entry) => sum + entry.amount, 0);
+  const totalIncome = entries
+    .filter((entry) => entry.type === "income")
+    .reduce((sum, entry) => sum + entry.amount, 0);
   const byCategory = new Map<string, number>();
-  for (const entry of expenseEntries) {
+  for (const entry of entries) {
+    if (entry.type !== "expense") continue;
     byCategory.set(entry.category, (byCategory.get(entry.category) ?? 0) + entry.amount);
   }
   const known = EXPENSE_CATEGORIES.map((item) => item.label);
@@ -227,6 +243,9 @@ export function buildFamilyMonthStats(
     })
     .filter((item) => item.amount > 0)
     .sort((a, b) => b.amount - a.amount);
+  return { categories, totalExpenses, totalIncome };
+}
 
-  return { awards, categories, totalExpenses, totalIncome };
+export function entriesInMonth(entries: Transaction[], monthKey: string): Transaction[] {
+  return entries.filter((entry) => inMonth(entry, monthKey));
 }

@@ -5,29 +5,25 @@ const DB_NAME = "budget_planner.db";
 type Database = SQLite.SQLiteDatabase;
 
 let db: Database | null = null;
-
-async function ping(database: Database) {
-  await database.getFirstAsync("SELECT 1 AS ok");
-}
+let opening: Promise<Database> | null = null;
 
 export async function getDb(): Promise<Database> {
-  if (db) {
-    try {
-      await ping(db);
-      return db;
-    } catch {
+  if (db) return db;
+  if (!opening) {
+    opening = (async () => {
       try {
-        await db.closeAsync();
-      } catch {
-        // native handle may already be gone after reload
+        const database = await SQLite.openDatabaseAsync(DB_NAME);
+        await migrate(database);
+        db = database;
+        return database;
+      } catch (error) {
+        opening = null;
+        db = null;
+        throw error;
       }
-      db = null;
-    }
+    })();
   }
-
-  db = await SQLite.openDatabaseAsync(DB_NAME, { useNewConnection: true });
-  await migrate(db);
-  return db;
+  return opening;
 }
 
 async function migrate(database: Database) {
@@ -70,6 +66,18 @@ async function migrate(database: Database) {
     await database.execAsync(
       "ALTER TABLE users ADD COLUMN account_type TEXT NOT NULL DEFAULT 'personal'"
     );
+  }
+  if (!userColumns.some((column) => column.name === "wallet_balance")) {
+    await database.execAsync("ALTER TABLE users ADD COLUMN wallet_balance REAL");
+  }
+  if (!userColumns.some((column) => column.name === "wallet_set_on")) {
+    await database.execAsync("ALTER TABLE users ADD COLUMN wallet_set_on TEXT");
+  }
+  if (!userColumns.some((column) => column.name === "wallet_after_id")) {
+    await database.execAsync("ALTER TABLE users ADD COLUMN wallet_after_id INTEGER NOT NULL DEFAULT 0");
+  }
+  if (!userColumns.some((column) => column.name === "wallet_recurring_month")) {
+    await database.execAsync("ALTER TABLE users ADD COLUMN wallet_recurring_month TEXT");
   }
 
   const tables = await database.getAllAsync<{ name: string }>(
@@ -126,6 +134,16 @@ async function migrate(database: Database) {
 
     CREATE TABLE IF NOT EXISTS receipt_tombstones (
       id TEXT PRIMARY KEY
+    );
+
+    CREATE TABLE IF NOT EXISTS goals (
+      id TEXT PRIMARY KEY,
+      user_id INTEGER NOT NULL,
+      title TEXT NOT NULL,
+      target_amount REAL NOT NULL,
+      saved_amount REAL NOT NULL DEFAULT 0,
+      deadline TEXT,
+      created_at TEXT NOT NULL
     );
   `);
 }

@@ -177,8 +177,8 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onCancel }) => {
       : step === "verify"
         ? "Kod zmienia się co 30 sekund. Wpisz ten, który widzisz teraz."
         : mode === "login"
-          ? "Jedno hasło i 2FA — dla Ciebie i dla rodziny."
-          : "Załóż konto albo wejdź kodem zaproszenia do rodzinnego budżetu.";
+          ? "Jedno hasło i 2FA — dla Ciebie, rodziny albo firmy."
+          : "Załóż konto albo wejdź kodem zaproszenia do budżetu rodziny lub firmy.";
 
   const iconName =
     step === "setup" || step === "verify" ? "shield-key-outline" : mode === "login" ? "key-variant" : "cloud-outline";
@@ -318,7 +318,7 @@ const AuthScreen: React.FC<AuthScreenProps> = ({ onCancel }) => {
                         <TextInput
                           mode="outlined"
                           label="Kod zaproszenia (opcjonalnie)"
-                          placeholder="Tylko gdy dołączasz do rodziny"
+                          placeholder="Gdy dołączasz do rodziny lub firmy"
                           value={inviteCode}
                           onChangeText={setInviteCode}
                           autoCapitalize="characters"

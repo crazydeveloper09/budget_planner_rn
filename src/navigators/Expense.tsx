@@ -14,7 +14,7 @@ const ExpensesNavigator = () => {
         <Stack.Screen
           name="Expenses Index"
           component={ExpensesIndexScreen}
-          options={{ headerTitle: "Podsumowanie" }}
+          options={{ headerTitle: "Historia wydatków" }}
         />
       </Stack.Navigator>
     </View>

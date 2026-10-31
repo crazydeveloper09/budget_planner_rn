@@ -5,8 +5,14 @@ import {
   listReceipts,
   removeReceipt as deleteReceiptRow,
   removeReceiptsForEntry,
+  updateReceiptsForEntry,
 } from "../db/receipts";
-import { addTransaction as insertTransaction, listTransactions, removeTransaction as deleteTransaction } from "../db/transactions";
+import {
+  addTransaction as insertTransaction,
+  listTransactions,
+  removeTransaction as deleteTransaction,
+  updateTransaction,
+} from "../db/transactions";
 import { persistReceiptFromPicker, receiptsDir } from "../helpers/receiptFiles";
 import { ownerLabel } from "../helpers/owners";
 import { useAuth } from "./AuthContext";
@@ -16,6 +22,7 @@ type FinanceContextValue = {
   entries: Transaction[];
   receipts: Receipt[];
   addEntry: (input: NewTransaction, options?: { receiptUris?: string[] }) => Promise<void>;
+  updateEntry: (id: number, input: NewTransaction) => Promise<void>;
   removeEntry: (id: number) => Promise<void>;
   addReceiptsToEntry: (entry: Transaction, sourceUris: string[]) => Promise<void>;
   removeReceipt: (id: string) => Promise<void>;
@@ -103,6 +110,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [attachReceipts, profile, pushBudget]
   );
 
+  const updateEntry = useCallback(
+    async (id: number, input: NewTransaction) => {
+      if (!profile) return;
+      const updated = await updateTransaction(id, input);
+      setEntries((current) => current.map((entry) => (entry.id === id ? updated : entry)));
+      if (updated.type === "expense") {
+        const owner = ownerLabel(updated.memberId, members);
+        await updateReceiptsForEntry(id, {
+          date: updated.date,
+          name: updated.name,
+          category: updated.category,
+          amount: updated.amount,
+          ownerName: owner === "Wspólny" ? null : owner,
+        });
+        setReceipts(await listReceipts(profile.id));
+      }
+      try {
+        await pushBudget();
+      } catch {
+        // sqlite already has the change
+      }
+    },
+    [members, profile, pushBudget]
+  );
+
   const removeEntry = useCallback(
     async (id: number) => {
       await removeReceiptsForEntry(id);
@@ -147,8 +179,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const value = useMemo(
-    () => ({ entries, receipts, addEntry, removeEntry, addReceiptsToEntry, removeReceipt }),
-    [entries, receipts, addEntry, removeEntry, addReceiptsToEntry, removeReceipt]
+    () => ({ entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt }),
+    [entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt]
   );
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

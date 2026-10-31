@@ -66,7 +66,7 @@ const MainNavigator = () => {
           name="Expenses"
           component={ExpensesNavigator}
           options={{
-            tabBarLabel: "Podsumowanie",
+            tabBarLabel: "Historia",
             tabBarIcon: ({ color, size }) => (
               <FontAwesome5 name="clipboard-list" color={color} size={size} />
             ),

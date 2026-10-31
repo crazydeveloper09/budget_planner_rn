@@ -131,6 +131,25 @@ export async function removeReceipt(id: string, options?: { tombstone?: boolean 
   if (options?.tombstone !== false) await addReceiptTombstone(id);
 }
 
+export async function updateReceiptsForEntry(
+  entryId: number,
+  input: {
+    date: string;
+    name: string;
+    category: string;
+    amount: number;
+    ownerName: string | null;
+  }
+): Promise<void> {
+  const database = await getDb();
+  await database.runAsync(
+    `UPDATE receipts
+     SET entry_date = ?, title = ?, category = ?, amount = ?, owner_name = ?
+     WHERE entry_id = ?`,
+    [input.date, input.name, input.category, input.amount, input.ownerName, Number(entryId)]
+  );
+}
+
 export async function removeReceiptsForEntry(entryId: number): Promise<void> {
   const database = await getDb();
   const rows = await database.getAllAsync<ReceiptRow>(

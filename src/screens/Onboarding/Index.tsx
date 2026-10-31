@@ -17,6 +17,7 @@ import { apiErrorMessage } from "../../contexts/AuthContext";
 import { useProfile } from "../../contexts/ProfileContext";
 import { AccountType, NewMember } from "../../db/interfaces";
 import { ACCOUNT_TYPES, getAccountTypeConfig } from "../../helpers/accountTypes";
+import { parseAmount } from "../../helpers/money";
 import { useAccent } from "../../contexts/ThemeContext";
 
 type OnboardingScreenProps = {
@@ -51,6 +52,7 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onLoginPress }) => 
   const [accountType, setAccountType] = useState<AccountType>("personal");
   const [name, setName] = useState("");
   const [people, setPeople] = useState<NewMember[]>([]);
+  const [wallet, setWallet] = useState("");
   const [saving, setSaving] = useState(false);
 
   const selected = useMemo(() => getAccountTypeConfig(accountType), [accountType]);
@@ -65,10 +67,16 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onLoginPress }) => 
   const finish = async () => {
     setSaving(true);
     try {
+      const walletBalance = parseAmount(wallet);
+      if (walletBalance === null) {
+        Alert.alert("Stan konta", "Podaj aktualny stan konta. Zero też wchodzi.");
+        return;
+      }
       await completeOnboarding({
         name: trimmedName,
         accountType,
         members: needsPeople ? people : [],
+        walletBalance,
       });
     } catch (error) {
       Alert.alert("Nie udało się", apiErrorMessage(error, "Nie zapisano profilu."));
@@ -81,6 +89,10 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onLoginPress }) => 
     if (saving) return;
     if (trimmedName.length < 2) {
       Alert.alert("Jeszcze imię", `Uzupełnij pole „${selected.nameLabel}”.`);
+      return;
+    }
+    if (parseAmount(wallet) === null) {
+      Alert.alert("Stan konta", "Podaj aktualny stan konta. Zero też wchodzi.");
       return;
     }
     if (needsPeople && step === 1) {
@@ -202,6 +214,20 @@ const OnboardingScreen: React.FC<OnboardingScreenProps> = ({ onLoginPress }) => 
                         color={accent}
                       />
                     }
+                    style={styles.input}
+                    outlineColor={surfaces.border}
+                    activeOutlineColor={accent}
+                    outlineStyle={styles.outline}
+                  />
+                  <Text style={styles.sectionLabel}>Aktualny stan konta</Text>
+                  <TextInput
+                    mode="outlined"
+                    label="Ile masz teraz na koncie"
+                    placeholder="np. 2450"
+                    value={wallet}
+                    onChangeText={setWallet}
+                    keyboardType="decimal-pad"
+                    left={<TextInput.Icon icon="wallet-outline" color={accent} />}
                     style={styles.input}
                     outlineColor={surfaces.border}
                     activeOutlineColor={accent}

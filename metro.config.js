@@ -53,6 +53,17 @@ config.resolver.resolveRequest = (context, moduleName, platform) => {
     }
   }
 
+  const origin = context.originModulePath ?? "";
+  if (
+    moduleName === "./Day" &&
+    origin.replace(/\\/g, "/").includes("react-native-calendar-picker/CalendarPicker/")
+  ) {
+    return {
+      type: "sourceFile",
+      filePath: path.resolve(__dirname, "src/shims/CalendarPickerDay.js"),
+    };
+  }
+
   const resolved = context.resolveRequest(context, moduleName, platform);
   const filePath =
     resolved?.type === "sourceFile" && typeof resolved.filePath === "string"

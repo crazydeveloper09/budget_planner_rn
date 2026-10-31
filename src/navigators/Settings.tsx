@@ -2,6 +2,7 @@ import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { View, StyleSheet } from "react-native";
 import { useAccent } from "../contexts/ThemeContext";
 import SettingsIndexScreen from "../screens/Settings/Index";
+import PrivacyScreen from "../screens/Settings/Privacy";
 import { getStackScreenOptions } from "./stackOptions";
 
 const Stack = createNativeStackNavigator();
@@ -15,6 +16,11 @@ const SettingsNavigator = () => {
           name="Settings Index"
           component={SettingsIndexScreen}
           options={{ headerTitle: "Ustawienia" }}
+        />
+        <Stack.Screen
+          name="Privacy"
+          component={PrivacyScreen}
+          options={{ headerTitle: "Polityka prywatności" }}
         />
       </Stack.Navigator>
     </View>

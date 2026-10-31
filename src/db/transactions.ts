@@ -90,6 +90,52 @@ export async function addTransaction(userId: number, input: NewTransaction): Pro
   };
 }
 
+export async function updateTransaction(id: number, input: NewTransaction): Promise<Transaction> {
+  const database = await getDb();
+  const title = String(input.name ?? "").trim();
+  const category = String(input.category ?? "").trim();
+  const amount = Number(input.amount);
+  const isRegular = input.regular ? 1 : 0;
+  const memberId = Number(input.memberId ?? SHARED_OWNER_ID);
+
+  await database.runAsync(
+    `UPDATE entries
+     SET entry_date = $entryDate, entry_kind = $entryKind, title = $title, category = $category,
+         amount = $amount, is_regular = $isRegular, member_id = $memberId
+     WHERE id = $id`,
+    {
+      $entryDate: String(input.date),
+      $entryKind: String(input.type),
+      $title: title,
+      $category: category,
+      $amount: amount,
+      $isRegular: isRegular,
+      $memberId: memberId,
+      $id: Number(id),
+    }
+  );
+
+  const row = await database.getFirstAsync<EntryRow>(
+    `SELECT id, user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id
+     FROM entries WHERE id = ?`,
+    [Number(id)]
+  );
+  if (!row) {
+    return {
+      id: Number(id),
+      userId: 0,
+      date: String(input.date),
+      type: input.type,
+      name: title,
+      category,
+      amount,
+      regular: Boolean(isRegular),
+      memberId: memberId || null,
+    };
+  }
+  return mapEntry(row);
+}
+
 export async function removeTransaction(id: number): Promise<void> {
   const database = await getDb();
   await database.runAsync("DELETE FROM entries WHERE id = $id", { $id: Number(id) });

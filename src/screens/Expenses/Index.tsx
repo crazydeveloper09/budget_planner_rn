@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Image,
@@ -15,7 +15,7 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { months, weekdays } from "../../../defaultData";
 import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
-import { Receipt, TransactionType } from "../../db/interfaces";
+import { Receipt, Transaction, TransactionType } from "../../db/interfaces";
 import { pickReceiptImage } from "../../helpers/receiptFiles";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
@@ -23,16 +23,115 @@ import CategoryPicker from "../../components/CategoryPicker";
 import OwnerPicker from "../../components/OwnerPicker";
 import ReceiptAttach from "../../components/ReceiptAttach";
 import ReceiptPreviewModal from "../../components/ReceiptPreviewModal";
+import EditEntryModal from "../../components/EditEntryModal";
 import { useAccent } from "../../contexts/ThemeContext";
 import { ownerLabel } from "../../helpers/owners";
+import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
 import { howManySaved, totalExpenses, totalIncomings } from "./helpers/countSum";
+
+const EXPENSE_COLOR = "#b42318";
+const INCOME_COLOR = "#2D6A4F";
+
+function formatDayHeading(date: Date, isToday: boolean) {
+  const label = date.toLocaleDateString("pl-PL", {
+    weekday: "long",
+    day: "numeric",
+    month: "long",
+  });
+  const titled = label.charAt(0).toUpperCase() + label.slice(1);
+  return isToday ? `Dzisiaj · ${titled}` : titled;
+}
+
+type DayEntryRowProps = {
+  item: Transaction;
+  receipts: Receipt[];
+  accent: string;
+  surface: string;
+  border: string;
+  isFamily: boolean;
+  members: ReturnType<typeof useProfile>["members"];
+  onOpenReceipt: (receipt: Receipt) => void;
+  onAddReceipt: (item: Transaction) => void;
+  onEdit: (item: Transaction) => void;
+  onRemove: (id: number) => void;
+};
+
+const DayEntryRow: React.FC<DayEntryRowProps> = ({
+  item,
+  receipts,
+  accent,
+  surface,
+  border,
+  isFamily,
+  members,
+  onOpenReceipt,
+  onAddReceipt,
+  onEdit,
+  onRemove,
+}) => {
+  const itemReceipts = receipts.filter((receipt) => receipt.entryId === item.id);
+  const firstReceipt = itemReceipts[0];
+  const isExpense = item.type === "expense";
+  const amountColor = isExpense ? EXPENSE_COLOR : INCOME_COLOR;
+  const meta = [
+    item.name ? item.category : null,
+    isFamily ? ownerLabel(item.memberId, members) : null,
+    itemReceipts.length > 1 ? `${itemReceipts.length} paragony` : null,
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  return (
+    <View style={[styles.row, { backgroundColor: surface, borderColor: border }]}>
+      {firstReceipt ? (
+        <Pressable onPress={() => onOpenReceipt(firstReceipt)}>
+          <Image source={{ uri: firstReceipt.uri }} style={styles.rowThumb} />
+        </Pressable>
+      ) : (
+        <View style={[styles.rowIcon, { backgroundColor: isExpense ? "#fdecea" : "#e8f5ee" }]}>
+          <MaterialCommunityIcons
+            name={isExpense ? "arrow-bottom-left" : "arrow-top-right"}
+            size={18}
+            color={amountColor}
+          />
+        </View>
+      )}
+      <View style={styles.rowCopy}>
+        <Text style={styles.rowTitle} numberOfLines={1}>
+          {item.name || item.category}
+        </Text>
+        {meta ? (
+          <Text style={styles.rowMeta} numberOfLines={1}>
+            {meta}
+          </Text>
+        ) : null}
+      </View>
+      <Text style={[styles.rowAmount, { color: amountColor }]}>
+        {isExpense ? "−" : "+"}
+        {formatPln(item.amount)}
+      </Text>
+      <Pressable onPress={() => onEdit(item)} hitSlop={8}>
+        <MaterialCommunityIcons name="pencil-outline" size={22} color={accent} />
+      </Pressable>
+      {isExpense ? (
+        <Pressable onPress={() => onAddReceipt(item)} hitSlop={8}>
+          <MaterialCommunityIcons name="camera-plus-outline" size={22} color={accent} />
+        </Pressable>
+      ) : null}
+      <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
+        <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
+      </Pressable>
+    </View>
+  );
+};
 
 const ExpensesIndexScreen: React.FC = () => {
   const { accent, surfaces } = useAccent();
   const { profile, members } = useProfile();
-  const { entries, receipts, addEntry, removeEntry, addReceiptsToEntry, removeReceipt } = useFinance();
+  const { entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt } = useFinance();
   const [selectedStartDate, setSelectedStartDate] = useState<Date>(new Date());
   const [formType, setFormType] = useState<TransactionType | null>(null);
+  const [editing, setEditing] = useState<Transaction | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -47,13 +146,38 @@ const ExpensesIndexScreen: React.FC = () => {
     [entries, selectedIso]
   );
 
+  const expenses = useMemo(
+    () => dayEntries.filter((entry) => entry.type === "expense"),
+    [dayEntries]
+  );
+  const incomes = useMemo(
+    () => dayEntries.filter((entry) => entry.type === "income"),
+    [dayEntries]
+  );
   const spent = totalExpenses(dayEntries);
   const incoming = totalIncomings(dayEntries);
+  const isToday = selectedIso === toIsoDate(new Date());
   const dailySaldo =
     profile?.accountType === "family"
       ? members.reduce((sum, member) => sum + (member.dailySaldo ?? 0), 0)
       : profile?.dailySaldo ?? 100;
   const saved = howManySaved(incoming, spent, dailySaldo);
+  const leftover = remainingAfterDay(profile, entries, selectedIso);
+  const leftoverLabel = isToday ? "Po dzisiejszym dniu zostanie" : "Po tym dniu zostanie";
+  const markedDays = useMemo(() => {
+    const days = new Set<string>();
+    for (const entry of entries) {
+      if (!entry.regular) days.add(entry.date);
+    }
+    return days;
+  }, [entries]);
+  const customDatesStyles = useCallback(
+    (date: Date) => {
+      if (!markedDays.has(toIsoDate(date))) return {};
+      return { dotColor: accent };
+    },
+    [accent, markedDays]
+  );
 
   const canSave = Boolean(formType && category) && parseAmount(amount) !== null;
 
@@ -69,6 +193,12 @@ const ExpensesIndexScreen: React.FC = () => {
   const saveEntry = async () => {
     const parsed = parseAmount(amount);
     if (!formType || !category || parsed === null) return;
+    const ok = await confirmIfOverBudget({
+      remaining: leftover,
+      amount: parsed,
+      isExpense: formType === "expense",
+    });
+    if (!ok) return;
     try {
       await addEntry(
         {
@@ -85,7 +215,7 @@ const ExpensesIndexScreen: React.FC = () => {
       resetForm();
     } catch (error) {
       console.error(error);
-      Alert.alert("Nie udało się zapisać", "Spróbuj dodać wydatek jeszcze raz.");
+      Alert.alert("Nie udało się zapisać", "Spróbuj zapisać jeszcze raz.");
     }
   };
 
@@ -117,6 +247,7 @@ const ExpensesIndexScreen: React.FC = () => {
         onDateChange={(date) => {
           if (date) setSelectedStartDate(parsePickedDate(date));
         }}
+        customDatesStyles={customDatesStyles}
         nextTitleStyle={{ fontSize: 20 }}
         previousTitleStyle={{ fontSize: 20 }}
         monthTitleStyle={{ fontSize: 18 }}
@@ -189,60 +320,111 @@ const ExpensesIndexScreen: React.FC = () => {
       ) : null}
 
       <View style={styles.summaryContainer}>
-        <Text style={styles.summaryLine}>Wydano dzisiaj: {formatPln(spent)}</Text>
-        <Text style={styles.summaryLine}>Przybyło dzisiaj: {formatPln(incoming)}</Text>
-        <Text style={styles.summaryLine}>Dzisiejsze saldo: {formatPln(dailySaldo)}</Text>
+        <Text style={styles.dayHeading}>{formatDayHeading(selectedStartDate, isToday)}</Text>
+
+        <View style={styles.totals}>
+          <View style={[styles.totalCard, { backgroundColor: "#fdecea", borderColor: "#f4c7c3" }]}>
+            <Text style={styles.totalLabel}>Wydatki</Text>
+            <Text style={[styles.totalValue, { color: EXPENSE_COLOR }]}>{formatPln(spent)}</Text>
+          </View>
+          <View style={[styles.totalCard, { backgroundColor: "#e8f5ee", borderColor: "#bfe0cc" }]}>
+            <Text style={styles.totalLabel}>Wpływy</Text>
+            <Text style={[styles.totalValue, { color: INCOME_COLOR }]}>{formatPln(incoming)}</Text>
+          </View>
+        </View>
+
         <Text style={styles.summaryLine}>
           {saved > 0
-            ? `Udało się zaoszczędzić ${formatPln(saved)}`
-            : "Niestety nie udało się nic zaoszczędzić"}
+            ? `Z dziennego limitu zostaje ${formatPln(saved)}`
+            : "Dzienny limit na ten dzień został wykorzystany"}
         </Text>
+        {leftover == null ? (
+          <Text style={styles.summaryLine}>Stan konta ustawisz w Profilu</Text>
+        ) : (
+          <Text style={[styles.summaryLine, leftover < 0 && styles.summaryWarn]}>
+            {leftoverLabel}: {formatPln(leftover)}
+          </Text>
+        )}
 
         {dayEntries.length === 0 ? (
-          <Text style={styles.empty}>Nie dodano wydatków ani wpływów na dany dzień</Text>
+          <Text style={styles.empty}>Brak wydatków i wpływów w tym dniu</Text>
         ) : (
-          <View style={styles.list}>
-            {dayEntries.map((item) => {
-              const itemReceipts = receipts.filter((receipt) => receipt.entryId === item.id);
-              const firstReceipt = itemReceipts[0];
-              return (
-              <View key={item.id} style={[styles.row, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}>
-                {firstReceipt ? (
-                  <Pressable onPress={() => setOpenReceipt(firstReceipt)}>
-                    <Image source={{ uri: firstReceipt.uri }} style={styles.rowThumb} />
-                  </Pressable>
-                ) : null}
-                <View style={styles.rowCopy}>
-                  <Text style={styles.rowTitle}>{item.name || item.category}</Text>
-                  <Text style={styles.rowMeta}>
-                    {item.category} · {item.type === "expense" ? "Wydatek" : "Wpływ"} · {formatPln(item.amount)}
-                    {isFamily ? ` · ${ownerLabel(item.memberId, members)}` : ""}
-                    {itemReceipts.length > 1 ? ` · ${itemReceipts.length} paragony` : ""}
+          <>
+            {expenses.length > 0 ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Wydatki</Text>
+                  <Text style={[styles.sectionCount, { color: EXPENSE_COLOR }]}>
+                    {expenses.length}
                   </Text>
                 </View>
-                {item.type === "expense" ? (
-                  <Pressable
-                    onPress={() => {
-                      void (async () => {
-                        const uri = await pickReceiptImage();
-                        if (uri) await addReceiptsToEntry(item, [uri]);
-                      })();
-                    }}
-                    hitSlop={8}
-                  >
-                    <MaterialCommunityIcons name="camera-plus-outline" size={22} color={accent} />
-                  </Pressable>
-                ) : null}
-                <Pressable onPress={() => removeEntry(item.id)} hitSlop={8}>
-                  <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
-                </Pressable>
+                <View style={styles.list}>
+                  {expenses.map((item) => (
+                    <DayEntryRow
+                      key={item.id}
+                      item={item}
+                      receipts={receipts}
+                      accent={accent}
+                      surface={surfaces.surface}
+                      border={surfaces.border}
+                      isFamily={isFamily}
+                      members={members}
+                      onOpenReceipt={setOpenReceipt}
+                      onAddReceipt={(entry) => {
+                        void (async () => {
+                          const uri = await pickReceiptImage();
+                          if (uri) await addReceiptsToEntry(entry, [uri]);
+                        })();
+                      }}
+                      onEdit={setEditing}
+                      onRemove={removeEntry}
+                    />
+                  ))}
+                </View>
               </View>
-            );
-            })}
-          </View>
+            ) : null}
+            {incomes.length > 0 ? (
+              <View style={styles.section}>
+                <View style={styles.sectionHead}>
+                  <Text style={styles.sectionTitle}>Wpływy</Text>
+                  <Text style={[styles.sectionCount, { color: INCOME_COLOR }]}>
+                    {incomes.length}
+                  </Text>
+                </View>
+                <View style={styles.list}>
+                  {incomes.map((item) => (
+                    <DayEntryRow
+                      key={item.id}
+                      item={item}
+                      receipts={receipts}
+                      accent={accent}
+                      surface={surfaces.surface}
+                      border={surfaces.border}
+                      isFamily={isFamily}
+                      members={members}
+                      onOpenReceipt={setOpenReceipt}
+                      onAddReceipt={() => undefined}
+                      onEdit={setEditing}
+                      onRemove={removeEntry}
+                    />
+                  ))}
+                </View>
+              </View>
+            ) : null}
+          </>
         )}
       </View>
     </ScrollView>
+    <EditEntryModal
+      entry={editing}
+      showOwnerPicker={isFamily}
+      showDate
+      onClose={() => setEditing(null)}
+      onSave={async (input) => {
+        if (!editing) return;
+        await updateEntry(editing.id, input);
+      }}
+    />
     <ReceiptPreviewModal
       receipt={openReceipt}
       onClose={() => setOpenReceipt(null)}
@@ -315,25 +497,73 @@ const styles = StyleSheet.create({
   summaryContainer: {
     paddingVertical: 20,
   },
+  dayHeading: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 18,
+    color: "#1f1220",
+    marginBottom: 12,
+  },
+  totals: {
+    flexDirection: "row",
+    gap: 10,
+    marginBottom: 12,
+  },
+  totalCard: {
+    flex: 1,
+    borderWidth: 1,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 12,
+  },
+  totalLabel: {
+    fontFamily: "PoppinsRegular",
+    fontSize: 13,
+    color: "#6b5f6a",
+    marginBottom: 2,
+  },
+  totalValue: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 18,
+  },
   summaryLine: {
     fontFamily: "PoppinsRegular",
-    fontSize: 15,
+    fontSize: 14,
     color: "#1f1220",
-    marginBottom: 6,
+    marginBottom: 4,
+  },
+  summaryWarn: {
+    color: EXPENSE_COLOR,
   },
   empty: {
     fontFamily: "PoppinsRegular",
     color: "#6b5f6a",
-    marginTop: 12,
+    marginTop: 16,
+  },
+  section: {
+    marginTop: 18,
+  },
+  sectionHead: {
+    flexDirection: "row",
+    alignItems: "baseline",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  sectionTitle: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 16,
+    color: "#1f1220",
+  },
+  sectionCount: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 14,
   },
   list: {
-    marginTop: 14,
     gap: 10,
   },
   row: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 10,
     borderWidth: 1,
     borderColor: "#eadfe6",
     borderRadius: 14,
@@ -346,8 +576,16 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     backgroundColor: "#eadfe6",
   },
+  rowIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   rowCopy: {
     flex: 1,
+    minWidth: 0,
   },
   rowTitle: {
     fontFamily: "MontserratSemiBold",
@@ -359,6 +597,10 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#6b5f6a",
     marginTop: 2,
+  },
+  rowAmount: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 14,
   },
 });
 

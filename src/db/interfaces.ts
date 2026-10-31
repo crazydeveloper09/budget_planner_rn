@@ -6,6 +6,10 @@ export interface User {
   accountType: AccountType;
   dailySaldo: number;
   currency: string;
+  walletBalance: number | null;
+  walletSetOn: string | null;
+  walletAfterId: number;
+  walletRecurringMonth: string | null;
 }
 
 export type MemberRole = "family" | "employee";
@@ -52,6 +56,18 @@ export type Receipt = {
 };
 
 export type NewReceipt = Omit<Receipt, "userId">;
+
+export type Goal = {
+  id: string;
+  userId: number;
+  title: string;
+  targetAmount: number;
+  savedAmount: number;
+  deadline: string | null;
+  createdAt: string;
+};
+
+export type NewGoal = Omit<Goal, "userId">;
 
 export type ChatPlan = {
   type: TransactionType;

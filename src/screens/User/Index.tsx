@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -9,9 +9,10 @@ import {
   StyleSheet,
   View,
 } from "react-native";
-import { Text } from "react-native-paper";
+import { Button, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useNavigation } from "@react-navigation/native";
+import GoalsEditor from "../../components/GoalsEditor";
 import PeopleEditor from "../../components/PeopleEditor";
 import RecurringEntriesEditor from "../../components/RecurringEntriesEditor";
 import { apiErrorMessage, useAuth } from "../../contexts/AuthContext";
@@ -19,13 +20,37 @@ import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
 import { getAccountTypeConfig } from "../../helpers/accountTypes";
 import { useAccent } from "../../contexts/ThemeContext";
+import { dailyLimitAmount, goalStartDate, sumDailyLeftovers } from "../../helpers/dailyLeftover";
 import { toIsoDate } from "../../helpers/dates";
+import { formatPln, parseAmount } from "../../helpers/money";
+import { currentWallet } from "../../helpers/wallet";
 
 const UserIndexScreen: React.FC = () => {
   const navigation = useNavigation();
   const { accent, surfaces } = useAccent();
-  const { profile, members, addMember, removeMember, canAdmin } = useProfile();
-  const { entries, addEntry, removeEntry } = useFinance();
+  const {
+    profile,
+    members,
+    goals,
+    addMember,
+    removeMember,
+    canAdmin,
+    setWalletBalance,
+    setDailySaldo,
+    setProfileName,
+    addGoal,
+    updateGoal,
+    removeGoal,
+  } = useProfile();
+  const { entries, addEntry, updateEntry, removeEntry } = useFinance();
+  const [walletDraft, setWalletDraft] = useState("");
+  const [walletEditing, setWalletEditing] = useState(false);
+  const [limitDraft, setLimitDraft] = useState("");
+  const [limitEditing, setLimitEditing] = useState(false);
+  const [nameDraft, setNameDraft] = useState("");
+  const [nameEditing, setNameEditing] = useState(false);
+  const wallet = currentWallet(profile, entries);
+  const showWalletForm = canAdmin && (wallet == null || walletEditing);
   const { user, household, familyPeople, pushBudget, invitePerson } = useAuth();
   const account = profile ? getAccountTypeConfig(profile.accountType) : null;
   const canManagePeople = profile?.accountType === "family" || profile?.accountType === "business";
@@ -37,22 +62,27 @@ const UserIndexScreen: React.FC = () => {
 
   const invite = async (name: string) => {
     if (!household) {
-      Alert.alert("Konto w chmurze", "Najpierw zaloguj konto główne w ustawieniach, potem zaproś członka rodziny.");
+      Alert.alert(
+        "Konto w chmurze",
+        isFamily
+          ? "Najpierw zaloguj konto główne w ustawieniach, potem zaproś członka rodziny."
+          : "Najpierw zaloguj konto główne w ustawieniach, potem zaproś pracownika."
+      );
       return;
     }
     try {
       await pushBudget();
       const result = await invitePerson(name);
-      const familyName = profile?.name ?? "rodziny";
+      const budgetName = profile?.name ?? (isFamily ? "rodziny" : "firmy");
       const message =
         `Cześć ${name}!\n\n` +
-        `Dołącz do budżetu „${familyName}” w aplikacji Budget Planner.\n\n` +
+        `Dołącz do budżetu „${budgetName}” w aplikacji Budget Planner.\n\n` +
         `Przy rejestracji (Nowe konto) wpisz kod zaproszenia:\n${result.inviteCode}\n\n` +
-        `Ten kod też odszyfrowuje rodzinny budżet. Nie wysyłaj go publicznie.\n\n` +
+        `Ten kod też odszyfrowuje ${isFamily ? "rodzinny" : "firmowy"} budżet. Nie wysyłaj go publicznie.\n\n` +
         `Potem włącz weryfikację dwustopniową i gotowe.`;
       try {
         await Share.share({
-          title: `Zaproszenie do ${familyName}`,
+          title: `Zaproszenie do ${budgetName}`,
           message,
         });
       } catch {
@@ -71,9 +101,179 @@ const UserIndexScreen: React.FC = () => {
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
     >
-      <Text style={styles.name}>{profile?.name ?? "Profil"}</Text>
+      <View style={styles.nameRow}>
+        <Text style={styles.name}>{profile?.name ?? "Profil"}</Text>
+        {canAdmin ? (
+          <Pressable
+            onPress={() => {
+              setNameEditing((open) => !open);
+              setNameDraft(profile?.name ?? "");
+            }}
+            hitSlop={8}
+          >
+            <MaterialCommunityIcons
+              name={nameEditing ? "close" : "pencil-outline"}
+              size={22}
+              color={accent}
+            />
+          </Pressable>
+        ) : null}
+      </View>
       <Text style={styles.meta}>{account?.title}</Text>
+      {nameEditing && canAdmin ? (
+        <View style={styles.nameForm}>
+          <TextInput
+            mode="outlined"
+            label={account?.nameLabel ?? "Nazwa"}
+            placeholder={account?.namePlaceholder}
+            value={nameDraft}
+            onChangeText={setNameDraft}
+            style={styles.walletInput}
+            outlineColor="#d7c8d3"
+            activeOutlineColor={accent}
+          />
+          <Button
+            mode="contained"
+            buttonColor={accent}
+            textColor="#fff"
+            disabled={!nameDraft.trim()}
+            onPress={() => {
+              void setProfileName(nameDraft).then(() => setNameEditing(false));
+            }}
+            style={styles.walletSave}
+          >
+            Zapisz {account?.nameLabel.toLowerCase() ?? "nazwę"}
+          </Button>
+        </View>
+      ) : null}
       {loggedAs ? <Text style={styles.loggedAs}>Zalogowany jako {loggedAs}</Text> : null}
+
+      <View style={[styles.walletCard, { backgroundColor: surfaces.surface }]}>
+        <View style={styles.walletHead}>
+          <Text style={styles.walletLabel}>Stan portfela</Text>
+          {canAdmin && wallet != null ? (
+            <Pressable
+              onPress={() => setWalletEditing((open) => !open)}
+              hitSlop={8}
+            >
+              <MaterialCommunityIcons
+                name={walletEditing ? "close" : "pencil-outline"}
+                size={20}
+                color={accent}
+              />
+            </Pressable>
+          ) : null}
+        </View>
+        <Text style={[styles.walletValue, { color: accent }]}>
+          {wallet == null ? "Jeszcze nie ustawiony" : formatPln(wallet)}
+        </Text>
+        {profile?.walletSetOn ? (
+          <Text style={styles.walletHint}>
+            Ostatnia korekta:{" "}
+            {(() => {
+              const [year, month, day] = profile.walletSetOn.split("-").map(Number);
+              return new Date(year, month - 1, day).toLocaleDateString("pl-PL");
+            })()}
+          </Text>
+        ) : (
+          <Text style={styles.walletHint}>Podaj, ile masz teraz na koncie. Kolejne wydatki i wpływy same to ruszają.</Text>
+        )}
+        {showWalletForm ? (
+          <>
+            <TextInput
+              mode="outlined"
+              label="Ustaw aktualny stan konta"
+              placeholder="np. 2450"
+              value={walletDraft}
+              onChangeText={setWalletDraft}
+              keyboardType="decimal-pad"
+              style={styles.walletInput}
+              outlineColor="#d7c8d3"
+              activeOutlineColor={accent}
+            />
+            <Button
+              mode="contained"
+              buttonColor={accent}
+              textColor="#fff"
+              disabled={parseAmount(walletDraft) === null}
+              onPress={() => {
+                const parsed = parseAmount(walletDraft);
+                if (parsed === null) return;
+                void setWalletBalance(parsed).then(() => {
+                  setWalletDraft("");
+                  setWalletEditing(false);
+                });
+              }}
+              style={styles.walletSave}
+            >
+              Zapisz stan konta
+            </Button>
+          </>
+        ) : null}
+      </View>
+
+      {profile?.accountType === "personal" ? (
+        <View style={[styles.walletCard, { backgroundColor: surfaces.surface }]}>
+          <View style={styles.walletHead}>
+            <Text style={styles.walletLabel}>Dzienny limit</Text>
+            {canAdmin ? (
+              <Pressable
+                onPress={() => {
+                  setLimitEditing((open) => !open);
+                  setLimitDraft(
+                    profile.dailySaldo != null ? String(profile.dailySaldo).replace(".", ",") : ""
+                  );
+                }}
+                hitSlop={8}
+              >
+                <MaterialCommunityIcons
+                  name={limitEditing ? "close" : "pencil-outline"}
+                  size={20}
+                  color={accent}
+                />
+              </Pressable>
+            ) : null}
+          </View>
+          <Text style={[styles.walletValue, { color: accent }]}>
+            {formatPln(profile.dailySaldo ?? 100)}
+          </Text>
+          <Text style={styles.walletHint}>
+            Tyle możesz wydać w ciągu dnia, zanim Historia pokaże, że limit poszedł.
+          </Text>
+          {limitEditing ? (
+            <>
+              <TextInput
+                mode="outlined"
+                label="Nowy dzienny limit"
+                placeholder="np. 80"
+                value={limitDraft}
+                onChangeText={setLimitDraft}
+                keyboardType="decimal-pad"
+                style={styles.walletInput}
+                outlineColor="#d7c8d3"
+                activeOutlineColor={accent}
+              />
+              <Button
+                mode="contained"
+                buttonColor={accent}
+                textColor="#fff"
+                disabled={parseAmount(limitDraft) === null}
+                onPress={() => {
+                  const parsed = parseAmount(limitDraft);
+                  if (parsed === null) return;
+                  void setDailySaldo(parsed).then(() => {
+                    setLimitDraft("");
+                    setLimitEditing(false);
+                  });
+                }}
+                style={styles.walletSave}
+              >
+                Zapisz limit
+              </Button>
+            </>
+          ) : null}
+        </View>
+      ) : null}
 
       {isFamily ? (
         <Pressable
@@ -89,7 +289,43 @@ const UserIndexScreen: React.FC = () => {
           </View>
           <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
         </Pressable>
+      ) : profile?.accountType === "personal" ? (
+        <Pressable
+          onPress={() => navigation.navigate("FamilyRankings" as never)}
+          style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
+        >
+          <View style={[styles.rankIcon, { backgroundColor: accent }]}>
+            <MaterialCommunityIcons name="chart-bar" size={22} color="#fff" />
+          </View>
+          <View style={styles.rankCopy}>
+            <Text style={styles.rankTitle}>Podsumowanie miesiąca</Text>
+            <Text style={styles.rankDeck}>Na co poszło najwięcej — i krótki werdykt.</Text>
+          </View>
+          <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
+        </Pressable>
       ) : null}
+
+      <GoalsEditor
+        items={goals}
+        readOnly={!canAdmin}
+        autoSavedFor={(goal) =>
+          sumDailyLeftovers(
+            entries,
+            dailyLimitAmount(profile, members),
+            goalStartDate(goal.createdAt),
+            toIsoDate(new Date())
+          )
+        }
+        onAdd={(input) => {
+          void addGoal(input);
+        }}
+        onUpdate={(id, input) => {
+          void updateGoal(id, input);
+        }}
+        onRemove={(id) => {
+          void removeGoal(id);
+        }}
+      />
 
       {canManagePeople && profile ? (
         <PeopleEditor
@@ -97,7 +333,7 @@ const UserIndexScreen: React.FC = () => {
           people={members}
           collapseForm
           readOnly={!canAdmin}
-          canInvite={canAdmin && isFamily}
+          canInvite={canAdmin && canManagePeople}
           inviteInfo={familyPeople}
           onInvite={(name) => {
             void invite(name);
@@ -132,6 +368,9 @@ const UserIndexScreen: React.FC = () => {
             memberId,
           });
         }}
+        onUpdate={(id, input) => {
+          void updateEntry(id, input);
+        }}
         onRemove={(id) => {
           void removeEntry(id);
         }}
@@ -157,6 +396,9 @@ const UserIndexScreen: React.FC = () => {
             memberId,
           });
         }}
+        onUpdate={(id, input) => {
+          void updateEntry(id, input);
+        }}
         onRemove={(id) => {
           void removeEntry(id);
         }}
@@ -176,10 +418,20 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 140,
   },
+  nameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: 12,
+  },
   name: {
     fontFamily: "MontserratSemiBold",
     fontSize: 24,
     color: "#1f1220",
+    flex: 1,
+  },
+  nameForm: {
+    marginBottom: 8,
   },
   meta: {
     fontFamily: "PoppinsRegular",
@@ -193,6 +445,42 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: "#1f1220",
     marginBottom: 12,
+  },
+  walletCard: {
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  walletHead: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  walletLabel: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 13,
+    color: "#6b5f6a",
+  },
+  walletValue: {
+    fontFamily: "MontserratSemiBold",
+    fontSize: 26,
+    marginTop: 4,
+  },
+  walletHint: {
+    fontFamily: "PoppinsRegular",
+    fontSize: 13,
+    color: "#6b5f6a",
+    marginTop: 6,
+    lineHeight: 18,
+  },
+  walletInput: {
+    backgroundColor: "#fff",
+    marginTop: 12,
+  },
+  walletSave: {
+    borderRadius: 12,
+    marginTop: 8,
   },
   rankCta: {
     flexDirection: "row",

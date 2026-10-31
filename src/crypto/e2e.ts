@@ -13,6 +13,10 @@ export type BudgetPlaintext = {
     name: string;
     accountType: AccountType;
     dailySaldo?: number;
+    walletBalance?: number | null;
+    walletSetOn?: string | null;
+    walletAfterId?: number;
+    walletRecurringMonth?: string | null;
   };
   people: Array<{
     name: string;
@@ -32,6 +36,14 @@ export type BudgetPlaintext = {
       plan: ChatPlan | null;
     }>;
   };
+  goals?: Array<{
+    id: string;
+    title: string;
+    targetAmount: number;
+    savedAmount: number;
+    deadline: string | null;
+    createdAt: string;
+  }>;
   receipts?: Array<{
     id: string;
     date: string;

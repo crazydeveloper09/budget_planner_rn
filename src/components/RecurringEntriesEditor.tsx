@@ -3,10 +3,11 @@ import { Pressable, StyleSheet, View } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAccent } from "../contexts/ThemeContext";
-import { Member, Transaction, TransactionType } from "../db/interfaces";
+import { Member, NewTransaction, Transaction, TransactionType } from "../db/interfaces";
 import { formatPln, parseAmount } from "../helpers/money";
 import { ownerLabel } from "../helpers/owners";
 import CategoryPicker from "./CategoryPicker";
+import EditEntryModal from "./EditEntryModal";
 import OwnerPicker from "./OwnerPicker";
 
 type RecurringEntriesEditorProps = {
@@ -19,6 +20,7 @@ type RecurringEntriesEditorProps = {
   showOwnerPicker?: boolean;
   readOnly?: boolean;
   onAdd: (input: { name: string; category: string; amount: number; memberId: number | null }) => void;
+  onUpdate: (id: number, input: NewTransaction) => void;
   onRemove: (id: number) => void;
 };
 
@@ -32,10 +34,12 @@ export default function RecurringEntriesEditor({
   showOwnerPicker = false,
   readOnly = false,
   onAdd,
+  onUpdate,
   onRemove,
 }: RecurringEntriesEditorProps) {
   const { accent, surfaces } = useAccent();
   const [formOpen, setFormOpen] = useState(false);
+  const [editing, setEditing] = useState<Transaction | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
@@ -43,10 +47,7 @@ export default function RecurringEntriesEditor({
 
   const canAdd = category.length > 0 && parseAmount(amount) !== null;
 
-  const submit = () => {
-    const parsed = parseAmount(amount);
-    if (!category || parsed === null) return;
-    onAdd({ name: name.trim(), category, amount: parsed, memberId });
+  const resetForm = () => {
     setName("");
     setCategory("");
     setAmount("");
@@ -54,12 +55,25 @@ export default function RecurringEntriesEditor({
     setFormOpen(false);
   };
 
+  const submit = () => {
+    const parsed = parseAmount(amount);
+    if (!category || parsed === null) return;
+    onAdd({ name: name.trim(), category, amount: parsed, memberId });
+    resetForm();
+  };
+
   return (
     <View style={styles.wrap}>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
         {readOnly ? null : (
-        <Pressable onPress={() => setFormOpen((open) => !open)} hitSlop={8}>
+        <Pressable
+          onPress={() => {
+            if (formOpen) resetForm();
+            else setFormOpen(true);
+          }}
+          hitSlop={8}
+        >
           <MaterialCommunityIcons
             name={formOpen ? "minus" : "plus"}
             size={26}
@@ -122,14 +136,29 @@ export default function RecurringEntriesEditor({
                 </Text>
               </View>
               {readOnly ? null : (
-              <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
-                <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
-              </Pressable>
+                <>
+                  <Pressable onPress={() => setEditing(item)} hitSlop={8}>
+                    <MaterialCommunityIcons name="pencil-outline" size={22} color={accent} />
+                  </Pressable>
+                  <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
+                    <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
+                  </Pressable>
+                </>
               )}
             </View>
           ))}
         </View>
       )}
+
+      <EditEntryModal
+        entry={editing}
+        showOwnerPicker={showOwnerPicker}
+        onClose={() => setEditing(null)}
+        onSave={async (input) => {
+          if (!editing) return;
+          onUpdate(editing.id, input);
+        }}
+      />
     </View>
   );
 }

@@ -14,14 +14,24 @@ import {
 } from "../api/auth";
 import { api, apiErrorMessage, setAccessToken } from "../api/client";
 import { CloudFamilyPerson, CloudHousehold, CloudMember, CloudUser, SessionPayload, TotpSetup } from "../api/types";
+import {
+  boundProfileId,
+  clearProfileSession,
+  dekKey,
+  hasStoredSession,
+  migrateLegacySession,
+  sessionKey,
+  setBoundProfileId,
+  tokenKey,
+} from "../auth/profileSession";
 import { wrapDek } from "../crypto/e2e";
 import { clearDek, flushUserWrap, requireDek } from "../crypto/keystore";
 import { unlockE2e } from "../crypto/unlock";
-import { unregisterChatPushToken } from "../notifications/chatPush";
+import { getActiveProfileId } from "../db/profile";
+import { unregisterChatPushToken, registerChatPushToken } from "../notifications/chatPush";
 import { pushSqliteBudget } from "../sync/budget";
 
 export const TOKEN_KEY = "bp_access_token";
-const SESSION_KEY = "bp_session";
 
 type CachedSession = {
   user: CloudUser;
@@ -55,14 +65,16 @@ type AuthContextValue = {
   pushBudget: () => Promise<void>;
   invitePerson: (name: string) => Promise<{ inviteCode: string }>;
   logout: () => Promise<void>;
+  activateForProfile: (profileId: number) => Promise<CloudUser | null>;
+  profileHasCloud: (profileId: number) => Promise<boolean>;
 };
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
 
-async function saveSession(session: CachedSession, token: string) {
+async function persistSession(session: CachedSession, token: string) {
   setAccessToken(token);
-  await SecureStore.setItemAsync(TOKEN_KEY, token);
-  await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(session));
+  await SecureStore.setItemAsync(tokenKey(), token);
+  await SecureStore.setItemAsync(sessionKey(), JSON.stringify(session));
 }
 
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -72,11 +84,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const [cloudMembers, setCloudMembers] = useState<CloudMember[]>([]);
   const [familyPeople, setFamilyPeople] = useState<CloudFamilyPerson[]>([]);
 
-  const applyCached = useCallback((session: CachedSession) => {
-    setUser(session.user);
-    setHousehold(session.household);
-    setCloudMembers(session.cloudMembers);
-    setFamilyPeople(session.familyPeople);
+  const applyCached = useCallback((session: CachedSession | null) => {
+    setUser(session?.user ?? null);
+    setHousehold(session?.household ?? null);
+    setCloudMembers(session?.cloudMembers ?? []);
+    setFamilyPeople(session?.familyPeople ?? []);
   }, []);
 
   const applySession = useCallback(async (session: SessionPayload, extras?: Partial<CachedSession>) => {
@@ -87,7 +99,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       familyPeople: extras?.familyPeople ?? [],
     };
     applyCached(cached);
-    await saveSession(cached, session.accessToken);
+    await persistSession(cached, session.accessToken);
   }, [applyCached]);
 
   const refreshMe = useCallback(async () => {
@@ -99,9 +111,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       familyPeople: me.people ?? [],
     };
     applyCached(cached);
-    const token = await SecureStore.getItemAsync(TOKEN_KEY);
+    const token = await SecureStore.getItemAsync(tokenKey());
     if (token) {
-      await SecureStore.setItemAsync(SESSION_KEY, JSON.stringify(cached));
+      await SecureStore.setItemAsync(sessionKey(), JSON.stringify(cached));
     }
     return me;
   }, [applyCached]);
@@ -112,15 +124,71 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     } catch {
       // wylogowanie i tak czyści sesję
     }
+    const id = boundProfileId();
     setAccessToken(null);
-    await SecureStore.deleteItemAsync(TOKEN_KEY);
-    await SecureStore.deleteItemAsync(SESSION_KEY);
-    await clearDek();
-    setUser(null);
-    setHousehold(null);
-    setCloudMembers([]);
-    setFamilyPeople([]);
-  }, []);
+    if (id != null) {
+      await clearProfileSession(id);
+    } else {
+      await SecureStore.deleteItemAsync(TOKEN_KEY);
+      await SecureStore.deleteItemAsync("bp_session");
+      await clearDek();
+    }
+    applyCached(null);
+  }, [applyCached]);
+
+  const activateForProfile = useCallback(async (profileId: number) => {
+    const previous = boundProfileId();
+    if (previous != null && previous !== profileId) {
+      try {
+        await unregisterChatPushToken();
+      } catch {
+        // przełączanie i tak zmienia token
+      }
+    }
+    await migrateLegacySession(profileId);
+    setBoundProfileId(profileId);
+    const token = await SecureStore.getItemAsync(tokenKey(profileId));
+    const raw = await SecureStore.getItemAsync(sessionKey(profileId));
+    if (!token) {
+      setAccessToken(null);
+      applyCached(null);
+      return null;
+    }
+    setAccessToken(token);
+    let currentUser: CloudUser | null = null;
+    if (raw) {
+      const cached = JSON.parse(raw) as CachedSession;
+      applyCached(cached);
+      currentUser = cached.user;
+    }
+    try {
+      const me = await fetchMe();
+      currentUser = me.user;
+      applyCached({
+        user: me.user,
+        household: me.household,
+        cloudMembers: me.members,
+        familyPeople: me.people ?? [],
+      });
+      await SecureStore.setItemAsync(
+        sessionKey(profileId),
+        JSON.stringify({
+          user: me.user,
+          household: me.household,
+          cloudMembers: me.members,
+          familyPeople: me.people ?? [],
+        })
+      );
+      try {
+        await registerChatPushToken();
+      } catch {
+        // Expo Go
+      }
+    } catch {
+      // offline: keep cached session
+    }
+    return currentUser;
+  }, [applyCached]);
 
   useEffect(() => {
     const interceptor = api.interceptors.response.use(
@@ -143,37 +211,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     let isMounted = true;
     (async () => {
       try {
-        const token = await SecureStore.getItemAsync(TOKEN_KEY);
-        const raw = await SecureStore.getItemAsync(SESSION_KEY);
-        if (token) setAccessToken(token);
-        if (raw) {
-          applyCached(JSON.parse(raw) as CachedSession);
-        }
-        if (token) {
-          try {
-            const me = await fetchMe();
-            if (!isMounted) return;
-            applyCached({
-              user: me.user,
-              household: me.household,
-              cloudMembers: me.members,
-              familyPeople: me.people ?? [],
-            });
-            await SecureStore.setItemAsync(
-              SESSION_KEY,
-              JSON.stringify({
-                user: me.user,
-                household: me.household,
-                cloudMembers: me.members,
-                familyPeople: me.people ?? [],
-              })
-            );
-          } catch {
-            if (!raw) {
-              await SecureStore.deleteItemAsync(TOKEN_KEY);
-              setAccessToken(null);
-            }
-          }
+        const activeId = await getActiveProfileId();
+        if (activeId != null) {
+          await activateForProfile(activeId);
+        } else {
+          const token = await SecureStore.getItemAsync(TOKEN_KEY);
+          const raw = await SecureStore.getItemAsync("bp_session");
+          if (token) setAccessToken(token);
+          if (raw) applyCached(JSON.parse(raw) as CachedSession);
         }
       } finally {
         if (isMounted) setIsReady(true);
@@ -182,7 +227,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [applyCached]);
+  }, [activateForProfile, applyCached]);
 
   const register = useCallback(async (input: {
     username: string;
@@ -207,7 +252,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }) => {
     const session = await confirmTwoFactor({ setupToken: input.setupToken, code: input.code });
     setAccessToken(session.accessToken);
-    await SecureStore.setItemAsync(TOKEN_KEY, session.accessToken);
+    await SecureStore.setItemAsync(tokenKey(), session.accessToken);
     await unlockE2e({ password: input.password, inviteCode: input.inviteCode });
     await applySession(session);
     try {
@@ -220,7 +265,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const verifyLogin = useCallback(async (input: { challengeToken: string; code: string; password: string }) => {
     const session = await verifyTwoFactor({ challengeToken: input.challengeToken, code: input.code });
     setAccessToken(session.accessToken);
-    await SecureStore.setItemAsync(TOKEN_KEY, session.accessToken);
+    await SecureStore.setItemAsync(tokenKey(), session.accessToken);
     await unlockE2e({ password: input.password });
     await applySession(session);
     try {
@@ -286,6 +331,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       pushBudget,
       invitePerson,
       logout,
+      activateForProfile,
+      profileHasCloud: hasStoredSession,
     }),
     [
       isReady,
@@ -302,6 +349,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       pushBudget,
       invitePerson,
       logout,
+      activateForProfile,
     ]
   );
 

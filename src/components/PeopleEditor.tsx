@@ -165,10 +165,11 @@ export default function PeopleEditor({
                 ) : (
                   <Text style={styles.personMeta}>
                     Wypłata {formatPln(person.salary ?? 0)}
+                    {cloud?.linked ? " · ma konto" : cloud?.inviteCode ? ` · kod ${cloud.inviteCode}` : ""}
                   </Text>
                 )}
               </View>
-              {canInvite && isFamily && !cloud?.linked ? (
+              {canInvite && !cloud?.linked ? (
                 <Pressable onPress={() => onInvite?.(person.name)} hitSlop={8}>
                   <MaterialCommunityIcons name="email-plus-outline" size={22} color={accent} />
                 </Pressable>

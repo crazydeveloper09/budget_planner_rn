@@ -1,4 +1,5 @@
 import cors from "cors";
+import ejs from "ejs";
 import express from "express";
 import fs from "fs";
 import helmet from "helmet";
@@ -11,6 +12,7 @@ import { config } from "./config.js";
 import { attachRealtime } from "./lib/realtime.js";
 import authRoutes from "./routes/auth.js";
 import householdRoutes from "./routes/household.js";
+import legalRoutes from "./routes/legal.js";
 
 async function connectMongo() {
   if (config.mongoUri) {
@@ -40,13 +42,29 @@ async function connectMongo() {
 async function main() {
   await connectMongo();
   const app = express();
+  const here = path.dirname(fileURLToPath(import.meta.url));
   app.set("trust proxy", 1);
-  app.use(helmet());
+  app.engine("ejs", ejs.__express);
+  app.set("view engine", "ejs");
+  app.set("views", path.join(here, "../views"));
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          imgSrc: ["'self'", "data:"],
+          scriptSrc: ["'none'"],
+        },
+      },
+    })
+  );
   app.use(cors());
   app.use(express.json({ limit: "8mb" }));
   app.get("/health", (_req, res) => {
     res.json({ ok: true });
   });
+  app.use(legalRoutes);
   app.use("/auth", authRoutes);
   app.use("/", householdRoutes);
 
