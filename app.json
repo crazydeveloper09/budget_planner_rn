@@ -48,8 +48,6 @@
     },
     "plugins": [
       "expo-font",
-      "expo-blur",
-      "expo-glass-effect",
       "expo-sqlite",
       "expo-secure-store",
       "expo-status-bar",
