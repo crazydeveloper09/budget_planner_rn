@@ -3,65 +3,179 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#702963" />
+    <meta name="description" content="Polityka prywatności aplikacji <%= appName %>." />
     <title>Polityka prywatności · <%= appName %></title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Montserrat:wght@600;700&family=Poppins:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
     <style>
       :root {
         --accent: #702963;
+        --accent-soft: #8d3a7d;
         --ink: #1f1220;
         --muted: #6b5f6a;
-        --bg: #fff8fb;
+        --body: #3d323c;
+        --paper: #ffffff;
+        --bg: #f7eef4;
+        --line: #eadfe6;
       }
       * { box-sizing: border-box; }
+      html { scroll-behavior: smooth; }
       body {
         margin: 0;
-        font-family: "Segoe UI", system-ui, sans-serif;
+        font-family: Poppins, system-ui, sans-serif;
         color: var(--ink);
-        background: var(--bg);
-        line-height: 1.6;
+        background:
+          radial-gradient(1200px 480px at 50% -80px, #9a4a8a 0%, var(--accent) 42%, transparent 43%),
+          var(--bg);
+        line-height: 1.65;
       }
-      header {
+      .hero {
+        color: #fff;
+        padding: 56px 20px 72px;
+        text-align: center;
+      }
+      .mark {
+        width: 56px;
+        height: 56px;
+        margin: 0 auto 18px;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.22);
+        display: grid;
+        place-items: center;
+        font-family: Montserrat, sans-serif;
+        font-weight: 700;
+        letter-spacing: 0.4px;
+      }
+      .kicker {
+        margin: 0;
+        font-size: 12px;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        opacity: 0.82;
+        font-weight: 500;
+      }
+      h1 {
+        margin: 10px 0 0;
+        font-family: Montserrat, sans-serif;
+        font-size: clamp(28px, 5vw, 40px);
+        font-weight: 700;
+        letter-spacing: 0.2px;
+      }
+      .meta {
+        display: inline-flex;
+        margin-top: 16px;
+        padding: 6px 12px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.14);
+        font-size: 13px;
+      }
+      .wrap {
+        max-width: 760px;
+        margin: -36px auto 0;
+        padding: 0 16px 72px;
+      }
+      .intro,
+      .card,
+      .foot {
+        background: var(--paper);
+        border: 1px solid var(--line);
+        border-radius: 20px;
+        box-shadow: 0 18px 40px rgba(31, 18, 32, 0.06);
+      }
+      .intro {
+        padding: 22px 24px;
+        margin-bottom: 16px;
+        font-size: 15.5px;
+        color: var(--body);
+      }
+      .toc {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin: 0 0 22px;
+      }
+      .toc a {
+        text-decoration: none;
+        color: var(--accent);
+        background: #fff;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        padding: 7px 12px;
+        font-size: 12.5px;
+        font-weight: 500;
+      }
+      .toc a:hover { background: #fbeff7; }
+      .card {
+        padding: 22px 24px 8px;
+        margin-bottom: 14px;
+      }
+      .card h2 {
+        font-family: Montserrat, sans-serif;
+        font-size: 17px;
+        margin: 0 0 10px;
+        padding-bottom: 10px;
+        border-bottom: 2px solid #f3e6ef;
+      }
+      .card p {
+        margin: 0 0 14px;
+        color: var(--body);
+        font-size: 15px;
+      }
+      .foot {
+        margin-top: 22px;
+        padding: 22px 24px;
+        text-align: center;
+      }
+      .foot a.mail {
+        display: inline-block;
+        margin: 8px 0 14px;
+        padding: 10px 16px;
+        border-radius: 12px;
         background: var(--accent);
         color: #fff;
-        padding: 28px 20px 24px;
+        text-decoration: none;
+        font-weight: 500;
       }
-      header p {
-        margin: 8px 0 0;
-        opacity: 0.9;
-        font-size: 14px;
-      }
-      main {
-        max-width: 720px;
-        margin: 0 auto;
-        padding: 28px 20px 64px;
-      }
-      h1 { margin: 0; font-size: 28px; }
-      h2 { font-size: 18px; margin: 28px 0 8px; }
-      p { margin: 0 0 12px; color: #3d323c; }
-      a { color: var(--accent); }
-      footer {
-        margin-top: 36px;
-        font-size: 13px;
+      .credit {
+        margin: 0;
         color: var(--muted);
+        font-size: 13px;
       }
     </style>
   </head>
   <body>
-    <header>
+    <header class="hero">
+      <div class="mark">BP</div>
+      <p class="kicker"><%= appName %></p>
       <h1>Polityka prywatności</h1>
-      <p><%= appName %> · aktualizacja: <%= updatedAt %></p>
+      <p class="meta">Aktualizacja: <%= updatedAt %></p>
     </header>
-    <main>
-      <p><%= intro %></p>
-      <% sections.forEach(function (section) { %>
-        <h2><%= section.title %></h2>
-        <% section.paragraphs.forEach(function (paragraph) { %>
-          <p><%= paragraph %></p>
+    <div class="wrap">
+      <p class="intro"><%= intro %></p>
+      <nav class="toc" aria-label="Spis treści">
+        <% sections.forEach(function (section, index) { %>
+          <a href="#s<%= index + 1 %>"><%= section.title %></a>
         <% }); %>
+      </nav>
+      <% sections.forEach(function (section, index) { %>
+        <article class="card" id="s<%= index + 1 %>">
+          <h2><%= section.title %></h2>
+          <% section.paragraphs.forEach(function (paragraph) { %>
+            <p><%= paragraph %></p>
+          <% }); %>
+        </article>
       <% }); %>
-      <footer>
-        Kontakt: <a href="mailto:<%= email %>"><%= email %></a><br />
-        Stworzone z ❤️ przez Maciej Solutions
+      <footer class="foot">
+        <p class="credit">Kontakt</p>
+        <a class="mail" href="mailto:<%= email %>"><%= email %></a>
+        <p class="credit">Stworzone z ❤️ przez Maciej Solutions</p>
       </footer>
-    </main>
+    </div>
   </body>
 </html>

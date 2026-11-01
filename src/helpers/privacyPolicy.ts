@@ -3,7 +3,7 @@ export type PrivacySection = {
   paragraphs: string[];
 };
 
-export const PRIVACY_UPDATED = "31 października 2026";
+export const PRIVACY_UPDATED = "1 listopada 2026";
 
 export const PRIVACY_INTRO =
   "Niniejsza polityka wyjaśnia, jakie dane przetwarza aplikacja Budget Planner, w jakim celu i na jakiej podstawie — zarówno na telefonie, jak i w opcjonalnej chmurze.";
@@ -13,7 +13,7 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     title: "1. Administrator",
     paragraphs: [
       "Administratorem danych jest Maciej Solutions, Obrońców Pokoju 30B/30, 67-200 Głogów.",
-      "Kontakt w sprawach prywatności: budget.planner@maciejsolutions.pl.",
+      "Kontakt: budget.planner@maciejsolutions.pl.",
     ],
   },
   {
@@ -75,9 +75,15 @@ export const PRIVACY_SECTIONS: PrivacySection[] = [
     ],
   },
   {
-    title: "10. Dzieci",
+    title: "10. Młodzi użytkownicy",
     paragraphs: [
-      "Aplikacja nie jest skierowana do dzieci poniżej 16. roku życia. Nie zbieramy świadomie danych takich osób.",
+      "Budget Planner jest też dla osób poniżej 16. roku życia — nastolatki też mogą chcieć oszczędzać i pilnować wydatków.",
+      "Korzystanie lokalne (bez konta w chmurze) zostaje na telefonie. Konto w chmurze osobom poniżej 16 lat zalecamy za zgodą rodzica albo opiekuna.",
+      "Nie profilujemy młodych użytkowników w celach marketingowych.",
     ],
+  },
+  {
+    title: "11. Kontakt",
+    paragraphs: ["budget.planner@maciejsolutions.pl"],
   },
 ];
