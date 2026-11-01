@@ -10,7 +10,6 @@ const PrivacyScreen: React.FC = () => {
 
   return (
     <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <Text style={styles.kicker}>Budget Planner</Text>
       <Text style={styles.title}>Polityka prywatności</Text>
       <Text style={styles.updated}>Aktualizacja: {PRIVACY_UPDATED}</Text>
       <Text style={styles.body}>{PRIVACY_INTRO}</Text>
@@ -40,18 +39,10 @@ const styles = StyleSheet.create({
     padding: 20,
     paddingBottom: 48,
   },
-  kicker: {
-    fontFamily: "MontserratSemiBold",
-    fontSize: 13,
-    color: "#6b5f6a",
-    textTransform: "uppercase",
-    letterSpacing: 0.4,
-  },
   title: {
     fontFamily: "MontserratSemiBold",
     fontSize: 24,
     color: "#1f1220",
-    marginTop: 6,
   },
   updated: {
     fontFamily: "PoppinsRegular",

@@ -92,3 +92,22 @@ export async function replaceGoals(userId: number, items: NewGoal[]): Promise<vo
     await addGoal(userId, item);
   }
 }
+
+export async function mergeGoals(userId: number, items: NewGoal[]): Promise<void> {
+  const existing = await listGoals(userId);
+  const byId = new Map<string, NewGoal>();
+  existing.forEach((goal) => {
+    byId.set(goal.id, {
+      id: goal.id,
+      title: goal.title,
+      targetAmount: goal.targetAmount,
+      savedAmount: goal.savedAmount,
+      deadline: goal.deadline,
+      createdAt: goal.createdAt,
+    });
+  });
+  items.forEach((goal) => {
+    byId.set(goal.id, goal);
+  });
+  await replaceGoals(userId, Array.from(byId.values()));
+}

@@ -47,6 +47,7 @@ async function main() {
   app.engine("ejs", ejs.renderFile);
   app.set("view engine", "ejs");
   app.set("views", path.join(here, "../views"));
+  app.use(express.static(path.join(here, "../public")));
   app.use(
     helmet({
       contentSecurityPolicy: {

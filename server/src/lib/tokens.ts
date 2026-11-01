@@ -17,6 +17,22 @@ export function signToken(
   return jwt.sign(payload, config.jwtSecret, { expiresIn });
 }
 
+export function signAccessToken(user: {
+  _id: unknown;
+  role: "owner" | "member";
+  householdId?: unknown;
+}) {
+  return signToken(
+    {
+      sub: String(user._id),
+      purpose: "access",
+      role: user.role,
+      householdId: user.householdId ? String(user.householdId) : null,
+    },
+    "30d"
+  );
+}
+
 export function verifyToken(token: string, purpose: TokenPurpose): TokenPayload {
   const decoded = jwt.verify(token, config.jwtSecret);
   if (typeof decoded !== "object" || decoded === null) {

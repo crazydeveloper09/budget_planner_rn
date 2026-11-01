@@ -112,9 +112,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       familyPeople: me.people ?? [],
     };
     applyCached(cached);
-    const token = await SecureStore.getItemAsync(tokenKey());
+    const token = me.accessToken || (await SecureStore.getItemAsync(tokenKey()));
     if (token) {
-      await SecureStore.setItemAsync(sessionKey(), JSON.stringify(cached));
+      await persistSession(cached, token);
     }
     return me;
   }, [applyCached]);
@@ -165,21 +165,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     try {
       const me = await withTimeout(fetchMe(), 8000);
       currentUser = me.user;
-      applyCached({
+      const cached: CachedSession = {
         user: me.user,
         household: me.household,
         cloudMembers: me.members,
         familyPeople: me.people ?? [],
-      });
-      await SecureStore.setItemAsync(
-        sessionKey(profileId),
-        JSON.stringify({
-          user: me.user,
-          household: me.household,
-          cloudMembers: me.members,
-          familyPeople: me.people ?? [],
-        })
-      );
+      };
+      applyCached(cached);
+      await persistSession(cached, me.accessToken || token);
     } catch {
       // offline / wolna sieć: zostaje cache
     }
@@ -278,14 +271,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const createHousehold = useCallback(async (input: { name: string; accountType: AccountType }) => {
     const created = await createHouseholdRequest(input);
-    setHousehold(created);
-    setUser((current) => (current ? { ...current, householdId: created.id } : current));
+    if (!created.household) return;
+    const nextUser = user ? { ...user, householdId: created.household.id } : null;
+    setHousehold(created.household);
+    if (nextUser) setUser(nextUser);
+    if (created.accessToken && nextUser) {
+      await persistSession(
+        {
+          user: nextUser,
+          household: created.household,
+          cloudMembers,
+          familyPeople,
+        },
+        created.accessToken
+      );
+    }
     try {
       await flushUserWrap();
     } catch {
       // klucz dojdzie przy następnym syncu
     }
-  }, []);
+  }, [cloudMembers, familyPeople, user]);
 
   const rotateInvite = useCallback(async () => {
     const updated = await rotateInviteRequest();

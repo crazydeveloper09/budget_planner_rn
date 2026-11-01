@@ -4,6 +4,7 @@ import { randomInviteCode } from "../lib/crypto.js";
 import { publicE2e, publicEntries, publicHousehold, publicPeople, publicRecurring, publicUser } from "../lib/public.js";
 import { isExpoPushToken, sendExpoPush } from "../lib/push.js";
 import { notifyHousehold } from "../lib/realtime.js";
+import { signAccessToken } from "../lib/tokens.js";
 import { requireAccess, type AuthedRequest } from "../middleware/auth.js";
 import { Household } from "../models/Household.js";
 import { Receipt } from "../models/Receipt.js";
@@ -60,6 +61,7 @@ router.get("/me", requireAccess, async (req, res) => {
     : [];
   const includeInvite = user.role === "owner";
   res.json({
+    accessToken: signAccessToken(user),
     user: publicUser(user),
     household: household ? publicHousehold(household, { includeInvite }) : null,
     members: members.map((member) => ({
@@ -135,8 +137,9 @@ router.post("/households/chat-notify", requireAccess, async (req, res) => {
     return;
   }
 
+  const householdOid = new mongoose.Types.ObjectId(authed.householdId);
   const members = await User.find({
-    householdId: authed.householdId,
+    householdId: householdOid,
     totpEnabled: true,
     _id: { $ne: new mongoose.Types.ObjectId(authed.userId) },
   }).select("expoPushTokens");
@@ -201,7 +204,10 @@ router.post("/households", requireAccess, async (req, res) => {
   }
   if (user.householdId) {
     const existing = await Household.findById(user.householdId);
-    res.json({ household: existing ? publicHousehold(existing, { includeInvite: true }) : null });
+    res.json({
+      accessToken: signAccessToken(user),
+      household: existing ? publicHousehold(existing, { includeInvite: true }) : null,
+    });
     return;
   }
 
@@ -224,7 +230,10 @@ router.post("/households", requireAccess, async (req, res) => {
   });
   user.householdId = household._id;
   await user.save();
-  res.status(201).json({ household: publicHousehold(household, { includeInvite: true }) });
+  res.status(201).json({
+    accessToken: signAccessToken(user),
+    household: publicHousehold(household, { includeInvite: true }),
+  });
 });
 
 router.put("/households/snapshot", requireAccess, async (req, res) => {

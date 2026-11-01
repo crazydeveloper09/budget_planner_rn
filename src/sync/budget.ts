@@ -3,8 +3,8 @@ import { CloudEntry, CloudFamilyPerson, E2eEnvelope } from "../api/types";
 import { BudgetPlaintext, decryptBudget, encryptBudget } from "../crypto/e2e";
 import { loadDek, requireDek } from "../crypto/keystore";
 import { Member, Transaction, User } from "../db/interfaces";
-import { listChatMessages, listChatTopics, replaceChat } from "../db/chat";
-import { listGoals, replaceGoals } from "../db/goals";
+import { listChatMessages, listChatTopics, mergeChat } from "../db/chat";
+import { listGoals, mergeGoals } from "../db/goals";
 import { listMembers, replaceMembers } from "../db/members";
 import { createProfile, getProfile, setCloudProfileId, updateProfile } from "../db/profile";
 import { listTransactions, replaceAllTransactions } from "../db/transactions";
@@ -223,7 +223,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
     // stare API albo brak sieci: zostają lokalne / zmigrowane paragony
   }
   if (snapshot.goals) {
-    await replaceGoals(
+    await mergeGoals(
       profile.id,
       snapshot.goals.map((goal) => ({
         id: goal.id,
@@ -236,7 +236,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
     );
   }
   if (snapshot.chat) {
-    await replaceChat(
+    await mergeChat(
       profile.id,
       snapshot.chat.topics ?? [],
       (snapshot.chat.messages ?? []).map((message) => ({

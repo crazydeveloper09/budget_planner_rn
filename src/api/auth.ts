@@ -42,6 +42,7 @@ export async function verifyTwoFactor(input: {
 }
 
 export async function fetchMe(): Promise<{
+  accessToken?: string;
   user: CloudUser;
   household: CloudHousehold | null;
   members: CloudMember[];
@@ -90,9 +91,9 @@ export async function inviteFamilyMember(name: string): Promise<{
 export async function createHousehold(input: {
   name: string;
   accountType: AccountType;
-}): Promise<CloudHousehold> {
+}): Promise<{ household: CloudHousehold; accessToken?: string }> {
   const { data } = await api.post("/households", input);
-  return data.household;
+  return data;
 }
 
 export async function rotateInviteCode(): Promise<CloudHousehold> {

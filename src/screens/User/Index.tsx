@@ -307,7 +307,6 @@ const UserIndexScreen: React.FC = () => {
 
       <GoalsEditor
         items={goals}
-        readOnly={!canAdmin}
         autoSavedFor={(goal) =>
           sumDailyLeftovers(
             entries,

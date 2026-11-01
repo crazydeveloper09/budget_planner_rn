@@ -1,15 +1,21 @@
 import type { Server } from "socket.io";
+import { User } from "../models/User.js";
 import { verifyToken } from "./tokens.js";
 
 let io: Server | null = null;
 
 export function attachRealtime(server: Server) {
   io = server;
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     const token = typeof socket.handshake.auth?.token === "string" ? socket.handshake.auth.token : "";
     try {
       const payload = verifyToken(token, "access");
-      socket.data.householdId = payload.householdId;
+      const user = await User.findById(payload.sub);
+      if (!user?.totpEnabled) {
+        next(new Error("unauthorized"));
+        return;
+      }
+      socket.data.householdId = user.householdId ? String(user.householdId) : null;
       next();
     } catch {
       next(new Error("unauthorized"));

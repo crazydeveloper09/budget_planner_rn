@@ -176,6 +176,44 @@ export async function replaceChat(
   }
 }
 
+export async function mergeChat(
+  userId: number,
+  topics: Array<{ id: string; title: string; createdAt?: string }>,
+  messages: Array<{
+    id: string;
+    topicId: string;
+    authorName: string;
+    body: string;
+    createdAt: string;
+    plan: ChatPlan | null;
+  }>
+): Promise<void> {
+  const existingTopics = await listChatTopics(userId);
+  const existingMessages = await listChatMessages(userId);
+  const topicMap = new Map<string, { id: string; title: string; createdAt?: string }>();
+  existingTopics.forEach((topic) => {
+    topicMap.set(topic.id, { id: topic.id, title: topic.title, createdAt: topic.createdAt });
+  });
+  topics.forEach((topic) => {
+    topicMap.set(topic.id, topic);
+  });
+  const messageMap = new Map<string, (typeof messages)[number]>();
+  existingMessages.forEach((message) => {
+    messageMap.set(message.id, {
+      id: message.id,
+      topicId: message.topicId,
+      authorName: message.authorName,
+      body: message.body,
+      createdAt: message.createdAt,
+      plan: message.plan,
+    });
+  });
+  messages.forEach((message) => {
+    messageMap.set(message.id, message);
+  });
+  await replaceChat(userId, Array.from(topicMap.values()), Array.from(messageMap.values()));
+}
+
 export async function ensureDefaultTopics(userId: number, accountType: AccountType): Promise<ChatTopic[]> {
   const existing = await listChatTopics(userId);
   if (existing.length > 0) return existing;

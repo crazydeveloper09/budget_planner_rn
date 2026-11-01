@@ -183,13 +183,11 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (existing) await activateForProfile(existing.id);
         if (!isMounted) return;
 
-        if (user?.role === "member") {
-          try {
-            await withTimeout(pullCloudBudgetIntoSqlite(), 8000, "pull");
-            if (isMounted) await applySqlite();
-          } catch {
-            // offline albo wolna sieć — lokalna kopia
-          }
+        try {
+          await withTimeout(pullCloudBudgetIntoSqlite(), 8000, "pull");
+          if (isMounted) await applySqlite();
+        } catch {
+          // offline albo wolna sieć — lokalna kopia
         }
 
         const posted = await applyMonthlyRecurringIfDue();
@@ -226,7 +224,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     const onAppState = (state: string) => {
       if (state !== "active") return;
       void (async () => {
-        if (user.role === "member") await pullLive();
+        await pullLive();
         const posted = await applyMonthlyRecurringIfDue();
         if (posted) await applySqlite();
         if (user.role === "owner" || posted) {
@@ -245,7 +243,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       disconnectLiveSync();
       sub.remove();
     };
-  }, [isReady, user, pullLive, pushBudget, applySqlite]);
+  }, [isReady, user?.id, household?.id, pullLive, pushBudget, applySqlite]);
 
   const completeOnboarding = useCallback(async (input: {
     name: string;
