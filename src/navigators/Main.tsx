@@ -7,6 +7,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useProfile } from "../contexts/ProfileContext";
 import ChatNavigator from "./Chat";
 import ExpensesNavigator from "./Expense";
+import GlassTabBar from "./GlassTabBar";
 import ReceiptsNavigator from "./Receipts";
 import UserNavigator from "./User";
 import SettingsNavigator from "./Settings";
@@ -28,47 +29,51 @@ const MainNavigator = () => {
           headerShown: false,
           sceneStyle: styles.scene,
         }}
-        tabBar={({ navigation, state, descriptors, insets }) => (
-          <BottomNavigation.Bar
-            navigationState={state}
-            compact={false}
-            shifting={false}
-            safeAreaInsets={{
-              top: 0,
-              left: Math.max(insets.left, safe.left),
-              right: Math.max(insets.right, safe.right),
-              bottom: Math.max(insets.bottom, safe.bottom, Platform.OS === "ios" ? 12 : 0),
-            }}
-            onTabPress={({ route, preventDefault }) => {
-              const event = navigation.emit({
-                type: "tabPress",
-                target: route.key,
-                canPreventDefault: true,
-              });
-
-              if (event.defaultPrevented) {
-                preventDefault();
-              } else {
-                navigation.dispatch({
-                  ...CommonActions.navigate(route.name, route.params),
-                  target: state.key,
+        tabBar={(props) =>
+          Platform.OS === "ios" ? (
+            <GlassTabBar {...props} />
+          ) : (
+            <BottomNavigation.Bar
+              navigationState={props.state}
+              compact={false}
+              shifting={false}
+              safeAreaInsets={{
+                top: 0,
+                left: Math.max(props.insets.left, safe.left),
+                right: Math.max(props.insets.right, safe.right),
+                bottom: Math.max(props.insets.bottom, safe.bottom),
+              }}
+              onTabPress={({ route, preventDefault }) => {
+                const event = props.navigation.emit({
+                  type: "tabPress",
+                  target: route.key,
+                  canPreventDefault: true,
                 });
+
+                if (event.defaultPrevented) {
+                  preventDefault();
+                } else {
+                  props.navigation.dispatch({
+                    ...CommonActions.navigate(route.name, route.params),
+                    target: props.state.key,
+                  });
+                }
+              }}
+              renderIcon={({ route, focused, color }) =>
+                props.descriptors[route.key].options.tabBarIcon?.({
+                  focused,
+                  color,
+                  size: 24,
+                }) ?? null
               }
-            }}
-            renderIcon={({ route, focused, color }) =>
-              descriptors[route.key].options.tabBarIcon?.({
-                focused,
-                color,
-                size: 24,
-              }) ?? null
-            }
-            getLabelText={({ route }) => {
-              const { options } = descriptors[route.key];
-              const label = options.tabBarLabel ?? options.title ?? route.name;
-              return typeof label === "string" ? label : undefined;
-            }}
-          />
-        )}
+              getLabelText={({ route }) => {
+                const { options } = props.descriptors[route.key];
+                const label = options.tabBarLabel ?? options.title ?? route.name;
+                return typeof label === "string" ? label : undefined;
+              }}
+            />
+          )
+        }
       >
         <Tab.Screen
           name="Expenses"
