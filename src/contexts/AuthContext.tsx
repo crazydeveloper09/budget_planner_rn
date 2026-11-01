@@ -28,7 +28,8 @@ import { wrapDek } from "../crypto/e2e";
 import { clearDek, flushUserWrap, requireDek } from "../crypto/keystore";
 import { unlockE2e } from "../crypto/unlock";
 import { getActiveProfileId } from "../db/profile";
-import { unregisterChatPushToken, registerChatPushToken } from "../notifications/chatPush";
+import { unregisterChatPushToken } from "../notifications/chatPush";
+import { withTimeout } from "../helpers/withTimeout";
 import { pushSqliteBudget } from "../sync/budget";
 
 export const TOKEN_KEY = "bp_access_token";
@@ -162,7 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       currentUser = cached.user;
     }
     try {
-      const me = await fetchMe();
+      const me = await withTimeout(fetchMe(), 8000);
       currentUser = me.user;
       applyCached({
         user: me.user,
@@ -179,13 +180,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           familyPeople: me.people ?? [],
         })
       );
-      try {
-        await registerChatPushToken();
-      } catch {
-        // Expo Go
-      }
     } catch {
-      // offline: keep cached session
+      // offline / wolna sieć: zostaje cache
     }
     return currentUser;
   }, [applyCached]);
@@ -213,7 +209,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       try {
         const activeId = await getActiveProfileId();
         if (activeId != null) {
-          await activateForProfile(activeId);
+          await migrateLegacySession(activeId);
+          setBoundProfileId(activeId);
+          const token = await SecureStore.getItemAsync(tokenKey(activeId));
+          const raw = await SecureStore.getItemAsync(sessionKey(activeId));
+          if (token) setAccessToken(token);
+          if (raw) applyCached(JSON.parse(raw) as CachedSession);
         } else {
           const token = await SecureStore.getItemAsync(TOKEN_KEY);
           const raw = await SecureStore.getItemAsync("bp_session");
@@ -227,7 +228,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     return () => {
       isMounted = false;
     };
-  }, [activateForProfile, applyCached]);
+  }, [applyCached]);
 
   const register = useCallback(async (input: {
     username: string;

@@ -21,6 +21,7 @@ import { listReceipts } from "../db/receipts";
 import { listTransactions } from "../db/transactions";
 import { monthKey, toIsoDate } from "../helpers/dates";
 import { applyMonthlyRecurringIfDue } from "../helpers/monthlyRecurring";
+import { withTimeout } from "../helpers/withTimeout";
 import { tokenKey } from "../auth/profileSession";
 import * as SecureStore from "expo-secure-store";
 import { pullCloudBudgetIntoSqlite } from "../sync/budget";
@@ -146,15 +147,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
 
     (async () => {
       try {
-        await initDb();
-
-        if (user?.role === "member") {
-          try {
-            await pullCloudBudgetIntoSqlite();
-          } catch {
-            // no network: keep whatever sqlite already has
-          }
-        }
+        await withTimeout(initDb(), 6000, "db");
 
         let { existing, existingMembers, existingGoals, all } = await loadFromSqlite();
         if (!existing && household && user?.role === "member") {
@@ -170,17 +163,6 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
           all = [existing];
         }
 
-        if (existing) {
-          await activateForProfile(existing.id);
-        }
-
-        if (existing) {
-          const posted = await applyMonthlyRecurringIfDue();
-          if (posted) {
-            ({ existing, existingMembers, existingGoals, all } = await loadFromSqlite());
-          }
-        }
-
         if (isMounted) {
           snapshotRef.current = await snapshotOf(existing, existingMembers, existingGoals);
           setProfile(existing);
@@ -189,16 +171,39 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
           setGoals(existingGoals);
           setLedgerStamp((current) => current + 1);
         }
+      } catch {
+        // sqlite: pokaż to, co jest
+      } finally {
+        if (isMounted) setIsReady(true);
+      }
+
+      try {
+        if (!isMounted) return;
+        const { existing } = await loadFromSqlite();
+        if (existing) await activateForProfile(existing.id);
+        if (!isMounted) return;
+
+        if (user?.role === "member") {
+          try {
+            await withTimeout(pullCloudBudgetIntoSqlite(), 8000, "pull");
+            if (isMounted) await applySqlite();
+          } catch {
+            // offline albo wolna sieć — lokalna kopia
+          }
+        }
+
+        const posted = await applyMonthlyRecurringIfDue();
+        if (posted && isMounted) await applySqlite();
 
         if (user?.role === "owner" && existing) {
           try {
             await pushBudget();
           } catch {
-            // sqlite stays the source; cloud waits for next online change
+            // sqlite stays the source
           }
         }
-      } finally {
-        if (isMounted) setIsReady(true);
+      } catch {
+        // chmura po starcie
       }
     })();
 

@@ -1,29 +1,46 @@
 import { useEffect } from "react";
-import * as Notifications from "expo-notifications";
 import { useAuth } from "../contexts/AuthContext";
+import { useProfile } from "../contexts/ProfileContext";
 import {
-  handleChatNotificationResponse,
+  configureChatNotificationHandler,
+  listenForChatNotificationResponse,
   registerChatPushToken,
 } from "./chatPush";
 
 export default function ChatPushListener() {
-  const { user, household } = useAuth();
+  const { isReady: authReady, user, household } = useAuth();
+  const { isReady } = useProfile();
+  const appReady = authReady && isReady;
 
   useEffect(() => {
-    if (!user || !household) return;
-    void registerChatPushToken().catch(() => {
-      // simulator / brak zgody
-    });
-  }, [user, household]);
+    if (!appReady) return;
+    const timer = setTimeout(() => {
+      void configureChatNotificationHandler();
+    }, 2000);
+    return () => clearTimeout(timer);
+  }, [appReady]);
 
   useEffect(() => {
-    const received = Notifications.addNotificationResponseReceivedListener((response) => {
-      handleChatNotificationResponse(response);
-    });
+    if (!appReady || !user || !household) return;
+    const timer = setTimeout(() => {
+      void registerChatPushToken();
+    }, 4000);
+    return () => clearTimeout(timer);
+  }, [appReady, user, household]);
+
+  useEffect(() => {
+    if (!appReady) return;
+    let unsubscribe: (() => void) | undefined;
+    const timer = setTimeout(() => {
+      void listenForChatNotificationResponse().then((stop) => {
+        unsubscribe = stop;
+      });
+    }, 2000);
     return () => {
-      received.remove();
+      clearTimeout(timer);
+      unsubscribe?.();
     };
-  }, []);
+  }, [appReady]);
 
   return null;
 }

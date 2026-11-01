@@ -1,8 +1,8 @@
 import { Platform } from "react-native";
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
 import * as SecureStore from "expo-secure-store";
 import { api } from "../api/client";
+import { withTimeout } from "../helpers/withTimeout";
 import { openChatTopic } from "../navigators/navigationRef";
 
 const PUSH_TOKEN_KEY = "bp_push_token";
@@ -17,8 +17,10 @@ export function getActiveChatTopic() {
   return activeTopicId;
 }
 
-export function configureChatNotificationHandler() {
+export async function configureChatNotificationHandler() {
+  if (Platform.OS === "web") return;
   try {
+    const Notifications = await import("expo-notifications");
     Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
         const data = notification.request.content.data as { topicId?: string };
@@ -33,34 +35,37 @@ export function configureChatNotificationHandler() {
       },
     });
   } catch {
-    // Expo Go 57 Android: brak ExpoTopicSubscriptionModule
+    // Expo Go / brak natywnego modułu
   }
-}
-
-async function ensureAndroidChannel() {
-  if (Platform.OS !== "android") return;
-  await Notifications.setNotificationChannelAsync("chat", {
-    name: "Czat",
-    importance: Notifications.AndroidImportance.HIGH,
-    vibrationPattern: [0, 250, 250, 250],
-    lightColor: "#702963",
-  });
 }
 
 export async function registerChatPushToken() {
   if (Platform.OS === "web") return;
   try {
-    await ensureAndroidChannel();
-    const permission = await Notifications.requestPermissionsAsync();
+    const Notifications = await import("expo-notifications");
+    if (Platform.OS === "android") {
+      await withTimeout(
+        Notifications.setNotificationChannelAsync("chat", {
+          name: "Czat",
+          importance: Notifications.AndroidImportance.HIGH,
+          vibrationPattern: [0, 250, 250, 250],
+          lightColor: "#702963",
+        }),
+        4000
+      );
+    }
+    const permission = await withTimeout(Notifications.requestPermissionsAsync(), 4000);
     if (permission.status !== "granted") return;
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
     if (!projectId) return;
-    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    const token = (
+      await withTimeout(Notifications.getExpoPushTokenAsync({ projectId }), 6000)
+    ).data;
     await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token);
     await api.put("/me/push-token", { token });
   } catch {
-    // Expo Go / brak natywnego pusha
+    // Huawei / Motorola / brak GMS / FCM
   }
 }
 
@@ -76,21 +81,27 @@ export async function unregisterChatPushToken() {
   }
 }
 
-export async function notifyChatMessage(input: {
-  topicId: string;
-  topicTitle: string;
-  authorName: string;
-  kind?: "message" | "plan";
-}) {
-  await api.post("/households/chat-notify", input);
-}
-
-export function handleChatNotificationResponse(response: Notifications.NotificationResponse) {
-  const data = response.notification.request.content.data as {
-    type?: string;
-    topicId?: string;
-    title?: string;
-  };
-  if (data?.type !== "chat" || !data.topicId) return;
-  openChatTopic(data.topicId, data.title || "Czat");
+export async function listenForChatNotificationResponse() {
+  if (Platform.OS === "web") return () => undefined;
+  try {
+    const Notifications = await import("expo-notifications");
+    const received = Notifications.addNotificationResponseReceivedListener((response) => {
+      const data = response.notification.request.content.data as {
+        type?: string;
+        topicId?: string;
+        title?: string;
+      };
+      if (data?.type !== "chat" || !data.topicId) return;
+      openChatTopic(data.topicId, data.title || "Czat");
+    });
+    return () => {
+      try {
+        received.remove();
+      } catch {
+        // native listener już nie żyje
+      }
+    };
+  } catch {
+    return () => undefined;
+  }
 }

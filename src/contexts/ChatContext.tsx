@@ -10,7 +10,7 @@ import {
   listChatTopics,
 } from "../db/chat";
 import { ChatMessage, ChatPlan, ChatTopic } from "../db/interfaces";
-import { notifyChatMessage } from "../notifications/chatPush";
+import { notifyChatMessage } from "../notifications/chatNotify";
 
 type ChatContextValue = {
   topics: ChatTopic[];

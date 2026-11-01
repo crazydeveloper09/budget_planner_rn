@@ -2,7 +2,8 @@ import { FontAwesome, FontAwesome5, MaterialCommunityIcons } from "@expo/vector-
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
 import { CommonActions } from "@react-navigation/native";
 import { BottomNavigation } from "react-native-paper";
-import { StatusBar, StyleSheet, View } from "react-native";
+import { Platform, StatusBar, StyleSheet, View } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useProfile } from "../contexts/ProfileContext";
 import ChatNavigator from "./Chat";
 import ExpensesNavigator from "./Expense";
@@ -16,6 +17,7 @@ StatusBar.setBarStyle("light-content");
 
 const MainNavigator = () => {
   const { profile } = useProfile();
+  const safe = useSafeAreaInsets();
   const showChat = profile?.accountType === "family" || profile?.accountType === "business";
   return (
     <View style={styles.root}>
@@ -29,8 +31,14 @@ const MainNavigator = () => {
         tabBar={({ navigation, state, descriptors, insets }) => (
           <BottomNavigation.Bar
             navigationState={state}
-            safeAreaInsets={insets}
+            compact={false}
             shifting={false}
+            safeAreaInsets={{
+              top: 0,
+              left: Math.max(insets.left, safe.left),
+              right: Math.max(insets.right, safe.right),
+              bottom: Math.max(insets.bottom, safe.bottom, Platform.OS === "ios" ? 12 : 0),
+            }}
             onTabPress={({ route, preventDefault }) => {
               const event = navigation.emit({
                 type: "tabPress",

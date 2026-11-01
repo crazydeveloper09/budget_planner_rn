@@ -29,14 +29,13 @@
         margin: 0;
         font-family: Poppins, system-ui, sans-serif;
         color: var(--ink);
-        background:
-          radial-gradient(1200px 480px at 50% -80px, #9a4a8a 0%, var(--accent) 42%, transparent 43%),
-          var(--bg);
+        background: var(--bg);
         line-height: 1.65;
       }
       .hero {
         color: #fff;
-        padding: 56px 20px 72px;
+        background: linear-gradient(180deg, #8a3a7a 0%, var(--accent) 55%, #5c1f52 100%);
+        padding: 48px 20px 64px;
         text-align: center;
       }
       .mark {
@@ -157,6 +156,7 @@
       <p class="meta">Aktualizacja: <%= updatedAt %></p>
     </header>
     <div class="wrap">
+      <!--email_off-->
       <p class="intro"><%= intro %></p>
       <nav class="toc" aria-label="Spis treści">
         <% sections.forEach(function (section, index) { %>
@@ -167,7 +167,11 @@
         <article class="card" id="s<%= index + 1 %>">
           <h2><%= section.title %></h2>
           <% section.paragraphs.forEach(function (paragraph) { %>
-            <p><%= paragraph %></p>
+            <% if (paragraph.indexOf(email) !== -1) { %>
+              <p><%- paragraph.split(email).join('<a href="mailto:' + email + '">' + email + "</a>") %></p>
+            <% } else { %>
+              <p><%= paragraph %></p>
+            <% } %>
           <% }); %>
         </article>
       <% }); %>
@@ -176,6 +180,7 @@
         <a class="mail" href="mailto:<%= email %>"><%= email %></a>
         <p class="credit">Stworzone z ❤️ przez Maciej Solutions</p>
       </footer>
+      <!--/email_off-->
     </div>
   </body>
 </html>
