@@ -18,7 +18,7 @@
       "checkAutomatically": "ON_LOAD"
     },
     "splash": {
-      "image": "./assets/splash-icon.png",
+      "image": "./assets/icon.png",
       "resizeMode": "contain",
       "backgroundColor": "#702963"
     },
@@ -35,6 +35,11 @@
         "foregroundImage": "./assets/icon.png",
         "backgroundColor": "#702963"
       },
+      "splash": {
+        "image": "./assets/icon.png",
+        "resizeMode": "contain",
+        "backgroundColor": "#702963"
+      },
       "edgeToEdgeEnabled": true,
       "softwareKeyboardLayoutMode": "resize"
     },
@@ -46,6 +51,15 @@
       "expo-sqlite",
       "expo-secure-store",
       "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#702963",
+          "image": "./assets/icon.png",
+          "imageWidth": 180,
+          "resizeMode": "contain"
+        }
+      ],
       "expo-updates",
       "@react-native-community/datetimepicker",
       [

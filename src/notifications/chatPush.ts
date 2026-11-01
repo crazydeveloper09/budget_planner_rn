@@ -19,19 +19,19 @@ export function getActiveChatTopic() {
 
 export function configureChatNotificationHandler() {
   try {
-  Notifications.setNotificationHandler({
-    handleNotification: async (notification) => {
-      const data = notification.request.content.data as { topicId?: string };
-      const suppress = Boolean(data?.topicId && data.topicId === activeTopicId);
-      return {
-        shouldShowAlert: !suppress,
-        shouldShowBanner: !suppress,
-        shouldShowList: !suppress,
-        shouldPlaySound: !suppress,
-        shouldSetBadge: false,
-      };
-    },
-  });
+    Notifications.setNotificationHandler({
+      handleNotification: async (notification) => {
+        const data = notification.request.content.data as { topicId?: string };
+        const suppress = Boolean(data?.topicId && data.topicId === activeTopicId);
+        return {
+          shouldShowAlert: !suppress,
+          shouldShowBanner: !suppress,
+          shouldShowList: !suppress,
+          shouldPlaySound: !suppress,
+          shouldSetBadge: false,
+        };
+      },
+    });
   } catch {
     // Expo Go 57 Android: brak ExpoTopicSubscriptionModule
   }
@@ -50,15 +50,15 @@ async function ensureAndroidChannel() {
 export async function registerChatPushToken() {
   if (Platform.OS === "web") return;
   try {
-  await ensureAndroidChannel();
-  const permission = await Notifications.requestPermissionsAsync();
-  if (permission.status !== "granted") return;
-  const projectId =
-    Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
-  if (!projectId) return;
-  const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
-  await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token);
-  await api.put("/me/push-token", { token });
+    await ensureAndroidChannel();
+    const permission = await Notifications.requestPermissionsAsync();
+    if (permission.status !== "granted") return;
+    const projectId =
+      Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
+    if (!projectId) return;
+    const token = (await Notifications.getExpoPushTokenAsync({ projectId })).data;
+    await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token);
+    await api.put("/me/push-token", { token });
   } catch {
     // Expo Go / brak natywnego pusha
   }

@@ -12,6 +12,9 @@ function resolveGoogleServicesFile() {
     fs.writeFileSync(dest, contents);
     return dest;
   }
+  // `eas build` ewaluuje config lokalnie; gitignore'owany plik nie wpadnie do archiwum.
+  // Na builderze jest sekret GOOGLE_SERVICES_JSON (typ file).
+  if (process.env.EAS_BUILD === "true") return undefined;
   const local = path.join(__dirname, "google-services.json");
   return fs.existsSync(local) ? local : undefined;
 }

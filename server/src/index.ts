@@ -44,7 +44,7 @@ async function main() {
   const app = express();
   const here = path.dirname(fileURLToPath(import.meta.url));
   app.set("trust proxy", 1);
-  app.engine("ejs", ejs.__express);
+  app.engine("ejs", ejs.renderFile);
   app.set("view engine", "ejs");
   app.set("views", path.join(here, "../views"));
   app.use(

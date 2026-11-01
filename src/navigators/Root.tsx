@@ -1,9 +1,9 @@
-import React from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import React, { useEffect } from "react";
 import { useNavigation } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
+import * as SplashScreen from "expo-splash-screen";
+import LoadingScreen from "../components/LoadingScreen";
 import { useAuth } from "../contexts/AuthContext";
-import { useAccent } from "../contexts/ThemeContext";
 import { useProfile } from "../contexts/ProfileContext";
 import AuthScreen from "../screens/Auth/Index";
 import OnboardingScreen from "../screens/Onboarding/Index";
@@ -19,14 +19,14 @@ function OnboardingRoute() {
 const RootNavigator = () => {
   const { isReady: authReady } = useAuth();
   const { isReady, profile } = useProfile();
-  const { accent } = useAccent();
+  const booting = !authReady || !isReady;
 
-  if (!authReady || !isReady) {
-    return (
-      <View style={styles.loading}>
-        <ActivityIndicator size="large" color={accent} />
-      </View>
-    );
+  useEffect(() => {
+    if (!booting) void SplashScreen.hideAsync().catch(() => undefined);
+  }, [booting]);
+
+  if (booting) {
+    return <LoadingScreen />;
   }
 
   return (
@@ -51,14 +51,5 @@ const RootNavigator = () => {
     </Stack.Navigator>
   );
 };
-
-const styles = StyleSheet.create({
-  loading: {
-    flex: 1,
-    backgroundColor: "#fff",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
 
 export default RootNavigator;
