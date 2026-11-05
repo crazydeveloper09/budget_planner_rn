@@ -210,7 +210,8 @@ const UserIndexScreen: React.FC = () => {
                   await setWalletBalance(parsed);
                   setWalletDraft("");
                   setWalletEditing(false);
-                } catch {
+                } catch (error) {
+                  console.error("Wallet correction failed", error);
                   Alert.alert("Nie zapisano salda", "Spróbuj ponownie.");
                 } finally { setWalletSaving(false); }
               }}

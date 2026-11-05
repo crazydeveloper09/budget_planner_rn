@@ -12,14 +12,16 @@ export default function WalletHistory({ profile, entries, members }: { profile: 
   const [visibleDays, setVisibleDays] = useState(7);
   const days = walletHistoryDays(profile, entries);
   return <View style={styles.days}>
-      <Text style={styles.hint}>Wpływy, wydatki i ręczne zapisy salda według dni. Zaplanowane przyszłe operacje pojawią się w swoim dniu. Historia transakcji odzwierciedla ich aktualne dane.</Text>
+      <Text style={styles.hint}>Wpływy, wydatki, korekty salda i usunięcia transakcji według dni. Zaplanowane przyszłe operacje pojawią się w swoim dniu. Historia transakcji odzwierciedla ich aktualne dane.</Text>
       <Text style={styles.hint}>Ręczne korekty zapisujemy od wprowadzenia historii. Dla starszego portfela dostępny jest ostatni znany stan.</Text>
       {days.length ? days.slice(0, visibleDays).map(day => <View key={day.date} style={[styles.day, { borderColor: surfaces.border }]}>
         <Text style={styles.title}>{day.date.split("-").reverse().join(".")}</Text>
         {day.transactions.length ? <Text style={styles.hint}>Wpływy: {formatPln(day.income)} · Wydatki: {formatPln(day.expense)}</Text> : null}
         {day.adjustments.some(item => item.before != null) ? <Text style={styles.hint}>Zmiana przez korekty: {day.correction > 0 ? "+" : ""}{formatPln(day.correction)}</Text> : null}
         {day.adjustments.map(item => <View key={item.id} style={[styles.adjustment, { backgroundColor: surfaces.surfaceStrong }]}>
-          <Text style={styles.title}>{item.createdAt == null ? "Ostatni znany stan" : item.before == null ? "Ręczne ustawienie salda" : item.before === item.after ? "Ręczny zapis salda bez zmiany" : "Ręczna korekta salda"}</Text>
+          <Text style={styles.title}>{item.reason === "transaction_updated" ? "Edycja transakcji" : item.reason === "transaction_deleted" ? (item.deletedTransaction?.type === "income" ? "Usunięcie wpływu" : "Usunięcie wydatku") : item.createdAt == null ? "Ostatni znany stan" : item.before == null ? "Ręczne ustawienie salda" : item.before === item.after ? "Ręczny zapis salda bez zmiany" : "Ręczna korekta salda"}</Text>
+          {item.editedTransaction ? <Text style={styles.hint}>{item.editedTransaction.after.name || item.editedTransaction.after.category}{" · "}{formatPln(item.editedTransaction.before.amount)} → {formatPln(item.editedTransaction.after.amount)}</Text> : null}
+          {item.deletedTransaction ? <Text style={styles.hint}>{item.deletedTransaction.name || item.deletedTransaction.category} · {item.deletedTransaction.date.split("-").reverse().join(".")}{" · "}{item.deletedTransaction.type === "expense" ? "+" : "−"}{formatPln(item.deletedTransaction.amount)}</Text> : null}
           <Text style={[styles.amount, { color: accent }]}>{item.before == null ? formatPln(item.after) : formatPln(item.before) + " → " + formatPln(item.after)}</Text>
           {item.createdAt ? <Text style={styles.hint}>{new Date(item.createdAt).toLocaleTimeString("pl-PL", { hour: "2-digit", minute: "2-digit", second: "2-digit" })}</Text> : null}
         </View>)}

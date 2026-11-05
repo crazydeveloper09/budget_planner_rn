@@ -27,6 +27,8 @@ import * as SecureStore from "expo-secure-store";
 import { pullCloudBudgetIntoSqlite } from "../sync/budget";
 import { connectLiveSync, disconnectLiveSync } from "../sync/liveSocket";
 import { useAuth } from "./AuthContext";
+import { hasInternet, watchInternet } from "../sync/connectivity";
+import { hasPendingBudget } from "../sync/pendingBudget";
 
 type ProfileContextValue = {
   profile: User | null;
@@ -36,6 +38,7 @@ type ProfileContextValue = {
   isReady: boolean;
   canAdmin: boolean;
   ledgerStamp: number;
+  refreshProfile: () => Promise<User | null>;
   completeOnboarding: (input: {
     name: string;
     accountType: AccountType;
@@ -123,7 +126,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [loadFromSqlite, snapshotOf]);
 
   const pullLive = useCallback(async () => {
-    if (!user) return;
+    if (!user || !(await hasInternet())) return;
     if (pullingRef.current) {
       pullAgainRef.current = true;
       return;
@@ -132,6 +135,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       do {
         pullAgainRef.current = false;
+        const active = await getProfile();
+        if (active && await hasPendingBudget(active.id)) await pushBudget();
         await pullCloudBudgetIntoSqlite(applySqlite);
         await applySqlite();
       } while (pullAgainRef.current);
@@ -140,7 +145,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     } finally {
       pullingRef.current = false;
     }
-  }, [applySqlite, user]);
+  }, [applySqlite, user?.id, pushBudget]);
 
   useEffect(() => {
     if (!authReady) return;
@@ -184,22 +189,10 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         if (existing) await activateForProfile(existing.id);
         if (!isMounted) return;
 
-        try {
-          await withTimeout(pullCloudBudgetIntoSqlite(), 8000, "pull");
-          if (isMounted) await applySqlite();
-        } catch {
-          // offline albo wolna sieć — lokalna kopia
-        }
-
         const posted = await applyMonthlyRecurringIfDue();
-        if (posted && isMounted) await applySqlite();
-
-        if (user?.role === "owner" && existing) {
-          try {
-            await pushBudget();
-          } catch {
-            // sqlite stays the source
-          }
+        if (posted && isMounted) {
+          await applySqlite();
+          await pushBudget();
         }
       } catch {
         // chmura po starcie
@@ -212,41 +205,46 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [authReady, household?.id, user?.id, user?.role, activateForProfile, loadFromSqlite, pushBudget, snapshotOf]);
 
   useEffect(() => {
-    if (!isReady || !user) return;
+    if (!isReady || !user || !household?.id) return;
 
     let cancelled = false;
-    void SecureStore.getItemAsync(tokenKey()).then((token) => {
-      if (!token || cancelled) return;
-      connectLiveSync(token, () => {
-        void pullLive();
-      });
-    });
-
-    const onAppState = (state: string) => {
-      if (state !== "active") return;
-      void (async () => {
-        await pullLive();
-        const posted = await applyMonthlyRecurringIfDue();
-        if (posted) await applySqlite();
-        if (user.role === "owner" || posted) {
-          try {
-            await pushBudget();
-          } catch {
-            // offline: local posting stays
-          }
-        }
-      })();
+    let online = false;
+    let connectionGeneration = 0;
+    const connect = async () => {
+      const generation = ++connectionGeneration;
+      const token = await SecureStore.getItemAsync(tokenKey());
+      if (cancelled || generation !== connectionGeneration || !online || AppState.currentState !== "active" || !token) return;
+      // The connect event catches up once at startup and after socket reconnection.
+      connectLiveSync(token, () => void pullLive());
     };
-    // Recover missed socket events while the app is active.
-    const timer = setInterval(() => {
-      if (AppState.currentState === "active") void pullLive();
-    }, 10000);
-    const sub = AppState.addEventListener("change", onAppState);
-
+    const stopWatching = watchInternet((connected) => {
+      online = connected;
+      if (connected) void connect().catch(() => undefined);
+      else {
+        connectionGeneration++;
+        disconnectLiveSync();
+      }
+    });
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active") {
+        connectionGeneration++;
+        disconnectLiveSync();
+        return;
+      }
+      if (online) void connect().catch(() => undefined);
+      void (async () => {
+        const posted = await applyMonthlyRecurringIfDue();
+        if (posted && !cancelled) {
+          await applySqlite();
+          await pushBudget();
+        }
+      })().catch(() => { /* Changes stay local until connectivity returns. */ });
+    });
     return () => {
       cancelled = true;
+      connectionGeneration++;
+      stopWatching();
       disconnectLiveSync();
-      clearInterval(timer);
       sub.remove();
     };
   }, [isReady, user?.id, household?.id, pullLive, pushBudget, applySqlite]);
@@ -502,6 +500,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isReady,
       canAdmin,
       ledgerStamp,
+      refreshProfile: applySqlite,
       completeOnboarding,
       switchAccount,
       addAccount,
@@ -523,6 +522,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       isReady,
       canAdmin,
       ledgerStamp,
+      applySqlite,
       completeOnboarding,
       switchAccount,
       addAccount,

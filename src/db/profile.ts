@@ -1,5 +1,6 @@
 import AsyncStorage from "@react-native-async-storage/async-storage";
-import { randomUUID } from "expo-crypto";
+import { getRandomBytes } from "expo-crypto";
+import { bytesToHex } from "../crypto/bytes";
 import { listTransactions } from "./transactions";
 import { currentWallet } from "../helpers/wallet";
 import { toIsoDate } from "../helpers/dates";
@@ -8,6 +9,10 @@ import { getDb } from "./init";
 
 const ACTIVE_PROFILE_KEY = "bp_active_profile_id";
 const CLOUD_PROFILE_KEY = "bp_cloud_profile_id";
+
+function newWalletAdjustmentId() {
+  return `wa_${bytesToHex(getRandomBytes(16))}`;
+}
 
 type UserRow = {
   id: number;
@@ -109,7 +114,7 @@ export async function createProfile(
   const walletSetOn = input.walletSetOn ?? null;
   const walletAfterId = input.walletAfterId ?? 0;
   const walletRecurringMonth = input.walletRecurringMonth ?? null;
-  const walletHistory = input.walletHistory ?? (walletBalance == null ? [] : [{ id: randomUUID(), date: walletSetOn ?? toIsoDate(new Date()), createdAt: new Date().toISOString(), before: null, after: walletBalance }]);
+  const walletHistory = input.walletHistory ?? (walletBalance == null ? [] : [{ id: newWalletAdjustmentId(), date: walletSetOn ?? toIsoDate(new Date()), createdAt: new Date().toISOString(), before: null, after: walletBalance }]);
   const result = await database.runAsync(
     "INSERT INTO users (name, account_type, dailySaldo, currency, wallet_balance, wallet_set_on, wallet_after_id, wallet_recurring_month, wallet_history) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [input.name.trim(), input.accountType, dailySaldo, "PLN", walletBalance, walletSetOn, walletAfterId, walletRecurringMonth, JSON.stringify(walletHistory)]
@@ -163,10 +168,10 @@ export async function updateProfile(
   if (input.recordWalletChange && walletBalance != null) {
     // Preserve the latest known baseline for wallets created before history existed.
     if (!walletHistory.length && current.walletBalance != null) {
-      walletHistory = [{ id: randomUUID(), date: current.walletSetOn ?? toIsoDate(new Date()), createdAt: null, before: null, after: current.walletBalance }];
+      walletHistory = [{ id: newWalletAdjustmentId(), date: current.walletSetOn ?? toIsoDate(new Date()), createdAt: null, before: null, after: current.walletBalance }];
     }
     const before = currentWallet(current, await listTransactions(id));
-    walletHistory = [...walletHistory, { id: randomUUID(), date: toIsoDate(new Date()), createdAt: new Date().toISOString(), before, after: walletBalance }];
+    walletHistory = [...walletHistory, { id: newWalletAdjustmentId(), date: toIsoDate(new Date()), createdAt: new Date().toISOString(), before, after: walletBalance }];
   }
   await database.runAsync(
     "UPDATE users SET name = ?, account_type = ?, dailySaldo = ?, wallet_balance = ?, wallet_set_on = ?, wallet_after_id = ?, wallet_recurring_month = ?, wallet_history = ? WHERE id = ?",

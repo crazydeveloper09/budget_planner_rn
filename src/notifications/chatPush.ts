@@ -8,6 +8,11 @@ import { openChatTopic } from "../navigators/navigationRef";
 const PUSH_TOKEN_KEY = "bp_push_token";
 
 let activeTopicId: string | null = null;
+let nativePushUnavailable = false;
+
+function pushAvailable() {
+  return Platform.OS !== "web" && Constants.appOwnership !== "expo" && !nativePushUnavailable;
+}
 
 export function setActiveChatTopic(topicId: string | null) {
   activeTopicId = topicId;
@@ -18,7 +23,7 @@ export function getActiveChatTopic() {
 }
 
 export async function configureChatNotificationHandler() {
-  if (Platform.OS === "web") return;
+  if (!pushAvailable()) return;
   try {
     const Notifications = await import("expo-notifications");
     Notifications.setNotificationHandler({
@@ -40,7 +45,7 @@ export async function configureChatNotificationHandler() {
 }
 
 export async function registerChatPushToken() {
-  if (Platform.OS === "web") return;
+  if (!pushAvailable()) return;
   try {
     const Notifications = await import("expo-notifications");
     if (Platform.OS === "android") {
@@ -65,6 +70,11 @@ export async function registerChatPushToken() {
     await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token);
     await api.put("/me/push-token", { token });
   } catch (error) {
+    if (String(error).includes("NotificationsChannelsProvider")) {
+      nativePushUnavailable = true;
+      console.warn("Brak natywnego modułu kanałów powiadomień. Zainstaluj nowy build aplikacji.");
+      return;
+    }
     console.warn("Chat push registration failed", error);
     throw error;
   }
@@ -83,7 +93,7 @@ export async function unregisterChatPushToken() {
 }
 
 export async function listenForChatNotificationResponse() {
-  if (Platform.OS === "web") return () => undefined;
+  if (!pushAvailable()) return () => undefined;
   try {
     const Notifications = await import("expo-notifications");
     const received = Notifications.addNotificationResponseReceivedListener((response) => {

@@ -16,6 +16,7 @@ export type BudgetPlaintext = {
     walletBalance?: number | null;
     walletSetOn?: string | null;
     walletAfterId?: number;
+    walletBaselineCount?: number;
     walletRecurringMonth?: string | null;
     walletHistory?: WalletAdjustment[];
   };

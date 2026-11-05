@@ -6,6 +6,12 @@ export type WalletAdjustment = {
   createdAt: string | null;
   before: number | null;
   after: number;
+  reason?: "transaction_deleted" | "transaction_updated";
+  deletedTransaction?: Pick<Transaction, "date" | "type" | "name" | "category" | "amount">;
+  editedTransaction?: {
+    before: Pick<Transaction, "date" | "type" | "name" | "category" | "amount" | "regular">;
+    after: Pick<Transaction, "date" | "type" | "name" | "category" | "amount" | "regular">;
+  };
 };
 
 export interface User {

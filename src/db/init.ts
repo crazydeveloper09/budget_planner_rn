@@ -6,13 +6,39 @@ type Database = SQLite.SQLiteDatabase;
 
 let db: Database | null = null;
 let opening: Promise<Database> | null = null;
+let nativeDb: Database | null = null;
+
+// Expo's convenience methods keep a native statement alive until finalizeAsync
+// finishes. Queue the entire call, including reads, so another query cannot
+// start while that statement is still being finalized on the same connection.
+export function serializeDatabase<T extends object>(database: T): T {
+  let tail: Promise<unknown> = Promise.resolve();
+  const methods = new Set(["execAsync", "runAsync", "getFirstAsync", "getAllAsync", "withTransactionAsync"]);
+  return new Proxy(database, {
+    get(target, property) {
+      const value = Reflect.get(target, property, target);
+      if (typeof value !== "function") return value;
+      if (!methods.has(String(property))) return value.bind(target);
+      return (...args: unknown[]) => {
+        const result = tail.then(() => value.apply(target, args));
+        // A failed statement must not stop subsequent operations. Do not retry
+        // a write: a finalize error can happen after the change was committed.
+        tail = result.catch(() => undefined);
+        return result;
+      };
+    },
+  });
+}
 
 export async function getDb(): Promise<Database> {
   if (db) return db;
   if (!opening) {
     opening = (async () => {
       try {
-        const database = await SQLite.openDatabaseAsync(DB_NAME);
+        nativeDb = await SQLite.openDatabaseAsync(DB_NAME);
+        const database = serializeDatabase(nativeDb);
+        await database.execAsync("PRAGMA busy_timeout = 5000;");
+        await database.execAsync("PRAGMA journal_mode = WAL;");
         await migrate(database);
         db = database;
         return database;
@@ -24,6 +50,17 @@ export async function getDb(): Promise<Database> {
     })();
   }
   return opening;
+}
+
+// The callback must use its supplied connection, never getDb(), to avoid
+// queueing queries behind its own transaction. Network/file work stays outside.
+export async function withDatabaseTransaction<T>(task: (database: Database) => Promise<T>): Promise<T> {
+  const database = await getDb();
+  let result!: T;
+  await database.withTransactionAsync(async () => {
+    result = await task(nativeDb!);
+  });
+  return result;
 }
 
 async function migrate(database: Database) {

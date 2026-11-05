@@ -8,8 +8,11 @@ import { listGoals, mergeGoals } from "../db/goals";
 import { listMembers, replaceMembers } from "../db/members";
 import { createProfile, getProfile, setCloudProfileId, updateProfile } from "../db/profile";
 import { listTransactions, replaceAllTransactions } from "../db/transactions";
+import { currentWallet } from "../helpers/wallet";
 import { ownerLabel } from "../helpers/owners";
 import { downloadRemoteReceipts, migrateEmbeddedReceipts, uploadLocalReceipts } from "./receipts";
+import { hasInternet } from "./connectivity";
+import { clearPendingBudget, hasPendingBudget, markBudgetPending } from "./pendingBudget";
 
 type SnapshotResponse = {
   household: {
@@ -20,6 +23,7 @@ type SnapshotResponse = {
     walletBalance?: number | null;
     walletSetOn?: string | null;
     walletAfterId?: number;
+    walletBaselineCount?: number;
     walletRecurringMonth?: string | null;
     walletHistory?: WalletAdjustment[];
   };
@@ -27,6 +31,8 @@ type SnapshotResponse = {
   entries: CloudEntry[];
   e2e?: E2eEnvelope | null;
 };
+
+let lastApplied: { profileId: number; auth: unknown; snapshot: string } | null = null;
 
 function toCloudEntries(entries: Transaction[], people: Member[]): CloudEntry[] {
   return entries.map((entry) => {
@@ -46,6 +52,8 @@ function toCloudEntries(entries: Transaction[], people: Member[]): CloudEntry[] 
 export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
   const profile = await getProfile();
   if (!profile) return null;
+  const revision = await markBudgetPending(profile.id);
+  if (!(await hasInternet())) return null;
   const people = await listMembers(profile.id);
   const entries = await listTransactions(profile.id);
   const topics = await listChatTopics(profile.id);
@@ -57,9 +65,10 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
       name: profile.name,
       accountType: profile.accountType,
       dailySaldo: profile.dailySaldo,
-      walletBalance: profile.walletBalance,
+      walletBalance: currentWallet(profile, entries),
       walletSetOn: profile.walletSetOn,
-      walletAfterId: profile.walletAfterId,
+      walletAfterId: 0,
+      walletBaselineCount: entries.length,
       walletRecurringMonth: profile.walletRecurringMonth,
       walletHistory: profile.walletHistory ?? [],
     },
@@ -114,11 +123,25 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
   } catch {
     // budżet już w chmurze; zdjęcia dociągną się przy następnym syncu
   }
+  await clearPendingBudget(profile.id, revision);
   return data;
 }
 
 export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknown>): Promise<User | null> {
+  const localProfile = await getProfile();
+  if (!(await hasInternet())) return localProfile;
+  // Never replace unsent local changes with a remote snapshot.
+  if (localProfile && await hasPendingBudget(localProfile.id)) return localProfile;
   const { data } = await api.get<SnapshotResponse>("/households/snapshot");
+  const activeProfile = await getProfile();
+  if (activeProfile && await hasPendingBudget(activeProfile.id)) return activeProfile;
+  const signature = JSON.stringify(data);
+  const auth = api.defaults.headers.common.Authorization;
+  if (activeProfile && lastApplied?.profileId === activeProfile.id && lastApplied.auth === auth && lastApplied.snapshot === signature) {
+    // Keep local edits and IDs intact when the server has no new snapshot.
+    try { await downloadRemoteReceipts(activeProfile.id, await listTransactions(activeProfile.id)); } catch {}
+    return activeProfile;
+  }
   let snapshot: {
     household: SnapshotResponse["household"];
     people: CloudFamilyPerson[];
@@ -147,6 +170,7 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
         walletBalance: plain.profile.walletBalance,
         walletSetOn: plain.profile.walletSetOn,
         walletAfterId: plain.profile.walletAfterId,
+        walletBaselineCount: plain.profile.walletBaselineCount,
         walletRecurringMonth: plain.profile.walletRecurringMonth,
         walletHistory: plain.profile.walletHistory,
       },
@@ -169,6 +193,18 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
   }
 
   let profile = await getProfile();
+  // Upgrade legacy snapshots using the local replica when it still contains the same ledger.
+  if (profile && snapshot.household.walletBaselineCount == null) {
+    const localEntries = await listTransactions(profile.id);
+    const localPeople = await listMembers(profile.id);
+    const canonical = (items: CloudEntry[]) => JSON.stringify(items.map(item => JSON.stringify([item.date, item.type, item.name, item.category, item.amount, Boolean(item.regular), item.ownerName ?? null])).sort());
+    if (localEntries.length && canonical(toCloudEntries(localEntries, localPeople)) === canonical(snapshot.entries)
+      && profile.walletBalance === snapshot.household.walletBalance
+      && profile.walletAfterId === snapshot.household.walletAfterId) {
+      snapshot.household = { ...snapshot.household,
+        walletBalance: currentWallet(profile, localEntries), walletBaselineCount: snapshot.entries.length };
+    }
+  }
   if (!profile) {
     profile = await createProfile(
       {
@@ -218,6 +254,13 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
   }));
   await replaceAllTransactions(profile.id, nextEntries);
   const storedEntries = await listTransactions(profile.id);
+  // Imported transactions receive new SQLite IDs; re-anchor the cloud wallet locally.
+  if (snapshot.household.walletBaselineCount != null) {
+    const included = storedEntries.slice().sort((a, b) => a.id - b.id).slice(0, snapshot.household.walletBaselineCount);
+    profile = (await updateProfile(profile.id, {
+      walletAfterId: included.reduce((max, entry) => Math.max(max, entry.id), 0),
+    })) ?? profile;
+  }
   if (snapshot.goals) {
     await mergeGoals(
       profile.id,
@@ -261,5 +304,6 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
   } catch {
     // stare API albo brak sieci: zostają lokalne / zmigrowane paragony
   }
+  lastApplied = { profileId: profile.id, auth, snapshot: signature };
   return getProfile();
 }

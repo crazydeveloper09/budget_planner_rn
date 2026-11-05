@@ -31,6 +31,7 @@ import { getActiveProfileId } from "../db/profile";
 import { unregisterChatPushToken } from "../notifications/chatPush";
 import { withTimeout } from "../helpers/withTimeout";
 import { pushSqliteBudget } from "../sync/budget";
+import { hasInternet } from "../sync/connectivity";
 
 export const TOKEN_KEY = "bp_access_token";
 
@@ -162,6 +163,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       applyCached(cached);
       currentUser = cached.user;
     }
+    if (!(await hasInternet())) return currentUser;
     try {
       const me = await withTimeout(fetchMe(), 8000);
       currentUser = me.user;
@@ -300,6 +302,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const pushBudget = useCallback(async () => {
     if (!user) return;
+    if (!(await hasInternet())) {
+      await pushSqliteBudget();
+      return;
+    }
     try {
       await flushUserWrap();
     } catch {
@@ -307,7 +313,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     const result = await pushSqliteBudget();
     if (result?.people) setFamilyPeople(result.people);
-  }, [user]);
+  }, [user?.id]);
 
   const invitePerson = useCallback(async (name: string) => {
     const result = await inviteFamilyMemberRequest(name);

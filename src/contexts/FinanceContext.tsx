@@ -32,7 +32,7 @@ type FinanceContextValue = {
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const { profile, members, isReady, ledgerStamp } = useProfile();
+  const { profile, members, isReady, ledgerStamp, refreshProfile } = useProfile();
   const { pushBudget } = useAuth();
   const [entries, setEntries] = useState<Transaction[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
@@ -114,7 +114,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateEntry = useCallback(
     async (id: number, input: NewTransaction) => {
       if (!profile) return;
-      const updated = await updateTransaction(id, input);
+      const updated = await updateTransaction(id, input, profile.id);
+      await refreshProfile();
       setEntries((current) => current.map((entry) => (entry.id === id ? updated : entry)));
       if (updated.type === "expense") {
         const owner = ownerLabel(updated.memberId, members);
@@ -133,13 +134,15 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // sqlite already has the change
       }
     },
-    [members, profile, pushBudget]
+    [members, profile, pushBudget, refreshProfile]
   );
 
   const removeEntry = useCallback(
     async (id: number) => {
+      if (!profile) return;
       await removeReceiptsForEntry(id);
-      await deleteTransaction(id);
+      await deleteTransaction(id, profile.id);
+      await refreshProfile();
       setEntries((current) => current.filter((entry) => entry.id !== id));
       setReceipts((current) => current.filter((item) => item.entryId !== id));
       try {
@@ -148,7 +151,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
         // sqlite already dropped the entry
       }
     },
-    [pushBudget]
+    [profile, pushBudget, refreshProfile]
   );
 
   const addReceiptsToEntry = useCallback(

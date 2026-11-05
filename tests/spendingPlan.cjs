@@ -141,7 +141,7 @@ assert.equal(goalLimitScenario(0, null, 1000, 0, null, '2026-11-04').date, null)
   } };
   const { updateProfile } = load('src/db/profile.ts', {
     '@react-native-async-storage/async-storage': { default: {} },
-    'expo-crypto': { randomUUID: () => 'event-' + ++sequence },
+    'expo-crypto': { getRandomBytes: size => new Uint8Array(size).fill(++sequence) },
     './init': { getDb: async () => profileDb },
     './transactions': { listTransactions: async () => [entry({ id: 1, regular: false, type: 'expense', amount: 100, date: '2026-11-02' })] },
   });
