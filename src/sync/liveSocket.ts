@@ -7,11 +7,12 @@ export function connectLiveSync(token: string, onBudgetUpdated: () => void) {
   disconnectLiveSync();
   socket = io(getApiBaseUrl(), {
     auth: { token },
-    transports: ["websocket", "polling"],
+    transports: ["polling", "websocket"],
     reconnection: true,
     reconnectionAttempts: Infinity,
     reconnectionDelay: 1000,
   });
+  socket.on("connect", onBudgetUpdated);
   socket.on("budget:updated", onBudgetUpdated);
 }
 

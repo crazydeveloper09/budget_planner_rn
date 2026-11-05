@@ -2,7 +2,7 @@ import { api } from "../api/client";
 import { CloudEntry, CloudFamilyPerson, E2eEnvelope } from "../api/types";
 import { BudgetPlaintext, decryptBudget, encryptBudget } from "../crypto/e2e";
 import { loadDek, requireDek } from "../crypto/keystore";
-import { Member, Transaction, User } from "../db/interfaces";
+import { Member, Transaction, User, WalletAdjustment } from "../db/interfaces";
 import { listChatMessages, listChatTopics, mergeChat } from "../db/chat";
 import { listGoals, mergeGoals } from "../db/goals";
 import { listMembers, replaceMembers } from "../db/members";
@@ -21,6 +21,7 @@ type SnapshotResponse = {
     walletSetOn?: string | null;
     walletAfterId?: number;
     walletRecurringMonth?: string | null;
+    walletHistory?: WalletAdjustment[];
   };
   people: CloudFamilyPerson[];
   entries: CloudEntry[];
@@ -60,6 +61,7 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
       walletSetOn: profile.walletSetOn,
       walletAfterId: profile.walletAfterId,
       walletRecurringMonth: profile.walletRecurringMonth,
+      walletHistory: profile.walletHistory ?? [],
     },
     people: people.map((person) => ({
       name: person.name,
@@ -71,6 +73,8 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
     goals: goals.map((goal) => ({
       id: goal.id,
       title: goal.title,
+      category: goal.category ?? "Inne",
+      priority: goal.priority ?? 2,
       targetAmount: goal.targetAmount,
       savedAmount: goal.savedAmount,
       deadline: goal.deadline,
@@ -113,7 +117,7 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
   return data;
 }
 
-export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
+export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknown>): Promise<User | null> {
   const { data } = await api.get<SnapshotResponse>("/households/snapshot");
   let snapshot: {
     household: SnapshotResponse["household"];
@@ -144,6 +148,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
         walletSetOn: plain.profile.walletSetOn,
         walletAfterId: plain.profile.walletAfterId,
         walletRecurringMonth: plain.profile.walletRecurringMonth,
+        walletHistory: plain.profile.walletHistory,
       },
       people: (plain.people ?? []).map((person) => {
         const cloud = (data.people ?? []).find((item) => item.name === person.name);
@@ -173,6 +178,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
         walletSetOn: snapshot.household.walletSetOn,
         walletAfterId: snapshot.household.walletAfterId,
         walletRecurringMonth: snapshot.household.walletRecurringMonth,
+        walletHistory: snapshot.household.walletHistory,
       },
       { linkCloud: true }
     );
@@ -187,6 +193,7 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
         walletSetOn: snapshot.household.walletSetOn,
         walletAfterId: snapshot.household.walletAfterId,
         walletRecurringMonth: snapshot.household.walletRecurringMonth,
+        walletHistory: snapshot.household.walletHistory,
       })) ?? profile;
   }
 
@@ -211,23 +218,14 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
   }));
   await replaceAllTransactions(profile.id, nextEntries);
   const storedEntries = await listTransactions(profile.id);
-  if (snapshot.receipts?.some((item) => item.image)) {
-    await migrateEmbeddedReceipts(
-      profile.id,
-      snapshot.receipts.filter((item): item is typeof item & { image: string } => Boolean(item.image))
-    );
-  }
-  try {
-    await downloadRemoteReceipts(profile.id, storedEntries);
-  } catch {
-    // stare API albo brak sieci: zostają lokalne / zmigrowane paragony
-  }
   if (snapshot.goals) {
     await mergeGoals(
       profile.id,
       snapshot.goals.map((goal) => ({
         id: goal.id,
         title: goal.title,
+        category: goal.category,
+        priority: goal.priority,
         targetAmount: goal.targetAmount,
         savedAmount: goal.savedAmount,
         deadline: goal.deadline ?? null,
@@ -249,6 +247,19 @@ export async function pullCloudBudgetIntoSqlite(): Promise<User | null> {
           : null,
       }))
     );
+  }
+  // Update visible data before downloading receipt images.
+  await onApplied?.();
+  if (snapshot.receipts?.some((item) => item.image)) {
+    await migrateEmbeddedReceipts(
+      profile.id,
+      snapshot.receipts.filter((item): item is typeof item & { image: string } => Boolean(item.image))
+    );
+  }
+  try {
+    await downloadRemoteReceipts(profile.id, storedEntries);
+  } catch {
+    // stare API albo brak sieci: zostają lokalne / zmigrowane paragony
   }
   return getProfile();
 }

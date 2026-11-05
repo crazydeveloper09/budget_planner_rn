@@ -1,6 +1,4 @@
-import { Alert } from "react-native";
 import { Transaction, User } from "../db/interfaces";
-import { formatPln } from "./money";
 
 export function walletNet(
   entries: Transaction[],
@@ -39,22 +37,3 @@ export function canAffordExpense(
   return amount <= remaining + 0.001;
 }
 
-export function confirmIfOverBudget(input: {
-  remaining: number | null;
-  amount: number;
-  isExpense: boolean;
-}): Promise<boolean> {
-  if (!input.isExpense || input.remaining == null || input.amount <= input.remaining + 0.001) {
-    return Promise.resolve(true);
-  }
-  return new Promise((resolve) => {
-    Alert.alert(
-      "Może zabraknąć",
-      `Po tym dniu zostaje ${formatPln(input.remaining)}. Ten wydatek to ${formatPln(input.amount)}. Zapisać mimo to?`,
-      [
-        { text: "Anuluj", style: "cancel", onPress: () => resolve(false) },
-        { text: "Zapisz", onPress: () => resolve(true) },
-      ]
-    );
-  });
-}

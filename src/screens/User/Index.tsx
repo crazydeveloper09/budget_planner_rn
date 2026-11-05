@@ -20,8 +20,8 @@ import { useFinance } from "../../contexts/FinanceContext";
 import { useProfile } from "../../contexts/ProfileContext";
 import { getAccountTypeConfig } from "../../helpers/accountTypes";
 import { useAccent } from "../../contexts/ThemeContext";
-import { dailyLimitAmount, goalStartDate, sumDailyLeftovers } from "../../helpers/dailyLeftover";
-import { toIsoDate } from "../../helpers/dates";
+import { allocateGoalSavings } from "../../helpers/goalAllocation";
+import { dailyLimitAmount } from "../../helpers/dailyLeftover";
 import { formatPln, parseAmount } from "../../helpers/money";
 import { currentWallet } from "../../helpers/wallet";
 
@@ -33,10 +33,10 @@ const UserIndexScreen: React.FC = () => {
     members,
     goals,
     addMember,
+    setMemberDailySaldo,
     removeMember,
     canAdmin,
     setWalletBalance,
-    setDailySaldo,
     setProfileName,
     addGoal,
     updateGoal,
@@ -45,8 +45,7 @@ const UserIndexScreen: React.FC = () => {
   const { entries, addEntry, updateEntry, removeEntry } = useFinance();
   const [walletDraft, setWalletDraft] = useState("");
   const [walletEditing, setWalletEditing] = useState(false);
-  const [limitDraft, setLimitDraft] = useState("");
-  const [limitEditing, setLimitEditing] = useState(false);
+  const [walletSaving, setWalletSaving] = useState(false);
   const [nameDraft, setNameDraft] = useState("");
   const [nameEditing, setNameEditing] = useState(false);
   const wallet = currentWallet(profile, entries);
@@ -55,6 +54,7 @@ const UserIndexScreen: React.FC = () => {
   const account = profile ? getAccountTypeConfig(profile.accountType) : null;
   const canManagePeople = profile?.accountType === "family" || profile?.accountType === "business";
   const isFamily = profile?.accountType === "family";
+  const goalAllocations = allocateGoalSavings(goals, entries, dailyLimitAmount(profile, members));
   const loggedAs =
     user?.role === "member" ? user.familyMemberName || user.displayName : null;
   const recurringExpenses = entries.filter((entry) => entry.regular && entry.type === "expense");
@@ -151,10 +151,14 @@ const UserIndexScreen: React.FC = () => {
       <View style={[styles.walletCard, { backgroundColor: surfaces.surface }]}>
         <View style={styles.walletHead}>
           <Text style={styles.walletLabel}>Stan portfela</Text>
+          <View style={styles.walletActions}>
+          <Pressable accessibilityRole="button" accessibilityLabel="Historia portfela" style={styles.walletIconButton} onPress={() => navigation.navigate("WalletHistory" as never)}><MaterialCommunityIcons name="history" size={22} color={accent} /></Pressable>
           {canAdmin && wallet != null ? (
             <Pressable
               onPress={() => setWalletEditing((open) => !open)}
-              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel={walletEditing ? "Zamknij edycję stanu konta" : "Edytuj stan konta"}
+              style={styles.walletIconButton}
             >
               <MaterialCommunityIcons
                 name={walletEditing ? "close" : "pencil-outline"}
@@ -163,6 +167,7 @@ const UserIndexScreen: React.FC = () => {
               />
             </Pressable>
           ) : null}
+          </View>
         </View>
         <Text style={[styles.walletValue, { color: accent }]}>
           {wallet == null ? "Jeszcze nie ustawiony" : formatPln(wallet)}
@@ -195,14 +200,19 @@ const UserIndexScreen: React.FC = () => {
               mode="contained"
               buttonColor={accent}
               textColor="#fff"
-              disabled={parseAmount(walletDraft) === null}
-              onPress={() => {
+              loading={walletSaving}
+              disabled={walletSaving || parseAmount(walletDraft) === null}
+              onPress={async () => {
                 const parsed = parseAmount(walletDraft);
-                if (parsed === null) return;
-                void setWalletBalance(parsed).then(() => {
+                if (parsed === null || walletSaving) return;
+                setWalletSaving(true);
+                try {
+                  await setWalletBalance(parsed);
                   setWalletDraft("");
                   setWalletEditing(false);
-                });
+                } catch {
+                  Alert.alert("Nie zapisano salda", "Spróbuj ponownie.");
+                } finally { setWalletSaving(false); }
               }}
               style={styles.walletSave}
             >
@@ -210,70 +220,23 @@ const UserIndexScreen: React.FC = () => {
             </Button>
           </>
         ) : null}
+
       </View>
 
-      {profile?.accountType === "personal" ? (
-        <View style={[styles.walletCard, { backgroundColor: surfaces.surface }]}>
-          <View style={styles.walletHead}>
-            <Text style={styles.walletLabel}>Dzienny limit</Text>
-            {canAdmin ? (
-              <Pressable
-                onPress={() => {
-                  setLimitEditing((open) => !open);
-                  setLimitDraft(
-                    profile.dailySaldo != null ? String(profile.dailySaldo).replace(".", ",") : ""
-                  );
-                }}
-                hitSlop={8}
-              >
-                <MaterialCommunityIcons
-                  name={limitEditing ? "close" : "pencil-outline"}
-                  size={20}
-                  color={accent}
-                />
-              </Pressable>
-            ) : null}
-          </View>
-          <Text style={[styles.walletValue, { color: accent }]}>
-            {formatPln(profile.dailySaldo ?? 100)}
-          </Text>
-          <Text style={styles.walletHint}>
-            Tyle możesz wydać w ciągu dnia, zanim Historia pokaże, że limit poszedł.
-          </Text>
-          {limitEditing ? (
-            <>
-              <TextInput
-                mode="outlined"
-                label="Nowy dzienny limit"
-                placeholder="np. 80"
-                value={limitDraft}
-                onChangeText={setLimitDraft}
-                keyboardType="decimal-pad"
-                style={styles.walletInput}
-                outlineColor="#d7c8d3"
-                activeOutlineColor={accent}
-              />
-              <Button
-                mode="contained"
-                buttonColor={accent}
-                textColor="#fff"
-                disabled={parseAmount(limitDraft) === null}
-                onPress={() => {
-                  const parsed = parseAmount(limitDraft);
-                  if (parsed === null) return;
-                  void setDailySaldo(parsed).then(() => {
-                    setLimitDraft("");
-                    setLimitEditing(false);
-                  });
-                }}
-                style={styles.walletSave}
-              >
-                Zapisz limit
-              </Button>
-            </>
-          ) : null}
+      <Pressable
+        onPress={() => navigation.navigate("DailyBudget" as never)}
+        style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
+        accessibilityRole="button"
+      >
+        <View style={[styles.rankIcon, { backgroundColor: accent }]}>
+          <MaterialCommunityIcons name="piggy-bank-outline" size={28} color="#fff" />
         </View>
-      ) : null}
+        <View style={styles.rankCopy}>
+          <Text style={styles.rankTitle}>{isFamily ? "Cel i oszczędności rodziny" : "Dzienny cel i oszczędności"}</Text>
+          <Text style={styles.rankDeck}>Ustaw limit i sprawdź, ile możesz odłożyć.</Text>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
+      </Pressable>
 
       {isFamily ? (
         <Pressable
@@ -307,14 +270,8 @@ const UserIndexScreen: React.FC = () => {
 
       <GoalsEditor
         items={goals}
-        autoSavedFor={(goal) =>
-          sumDailyLeftovers(
-            entries,
-            dailyLimitAmount(profile, members),
-            goalStartDate(goal.createdAt),
-            toIsoDate(new Date())
-          )
-        }
+        onOpen={(goalId) => navigation.navigate({ name: "GoalDetails", params: { goalId } } as never)}
+        autoSavedFor={(goal) => goalAllocations.get(goal.id) ?? 0}
         onAdd={(input) => {
           void addGoal(input);
         }}
@@ -328,7 +285,7 @@ const UserIndexScreen: React.FC = () => {
 
       {canManagePeople && profile ? (
         <PeopleEditor
-          accountType={profile.accountType}
+          accountType={isFamily ? "family" : "business"}
           people={members}
           collapseForm
           readOnly={!canAdmin}
@@ -339,6 +296,10 @@ const UserIndexScreen: React.FC = () => {
           }}
           onAdd={(person) => {
             void addMember(person);
+          }}
+          onUpdateDailySaldo={async (index, amount) => {
+            const member = members[index];
+            if (member) await setMemberDailySaldo(member.id, amount);
           }}
           onRemove={(index) => {
             const member = members[index];
@@ -356,9 +317,9 @@ const UserIndexScreen: React.FC = () => {
         members={members}
         showOwnerPicker={isFamily}
         readOnly={!canAdmin}
-        onAdd={({ name, category, amount, memberId }) => {
+        onAdd={({ name, category, amount, memberId, date }) => {
           void addEntry({
-            date: toIsoDate(new Date()),
+            date,
             type: "expense",
             name,
             category,
@@ -384,9 +345,9 @@ const UserIndexScreen: React.FC = () => {
         members={members}
         showOwnerPicker={isFamily}
         readOnly={!canAdmin}
-        onAdd={({ name, category, amount, memberId }) => {
+        onAdd={({ name, category, amount, memberId, date }) => {
           void addEntry({
-            date: toIsoDate(new Date()),
+            date,
             type: "income",
             name,
             category,
@@ -408,6 +369,8 @@ const UserIndexScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  walletActions: { flexDirection: "row", alignItems: "center", gap: 4 },
+  walletIconButton: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
   flex: { flex: 1, backgroundColor: "#fff" },
   container: {
     flex: 1,

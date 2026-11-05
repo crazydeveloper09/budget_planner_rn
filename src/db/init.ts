@@ -80,6 +80,10 @@ async function migrate(database: Database) {
     await database.execAsync("ALTER TABLE users ADD COLUMN wallet_recurring_month TEXT");
   }
 
+  if (!userColumns.some(column => column.name === "wallet_history")) {
+    await database.execAsync("ALTER TABLE users ADD COLUMN wallet_history TEXT NOT NULL DEFAULT '[]'");
+  }
+
   const tables = await database.getAllAsync<{ name: string }>(
     "SELECT name FROM sqlite_master WHERE type = 'table'"
   );
@@ -146,6 +150,17 @@ async function migrate(database: Database) {
       created_at TEXT NOT NULL
     );
   `);
+  const goalColumns = await database.getAllAsync<{ name: string }>("PRAGMA table_info(goals)");
+  if (!goalColumns.some(column => column.name === "category")) {
+    await database.execAsync("ALTER TABLE goals ADD COLUMN category TEXT NOT NULL DEFAULT 'Inne'");
+  }
+  if (!goalColumns.some(column => column.name === "priority")) {
+    await database.execAsync("ALTER TABLE goals ADD COLUMN priority INTEGER NOT NULL DEFAULT 2");
+  }
+  const receiptColumns = await database.getAllAsync<{ name: string }>("PRAGMA table_info(receipts)");
+  if (!receiptColumns.some((column) => column.name === "standalone")) {
+    await database.execAsync("ALTER TABLE receipts ADD COLUMN standalone INTEGER NOT NULL DEFAULT 0");
+  }
 }
 
 export async function initDb() {

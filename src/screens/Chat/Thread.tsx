@@ -1,3 +1,7 @@
+import { useKeyboardVisible } from "../../helpers/useKeyboardVisible";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { useBudgetGuard } from "../../components/useBudgetGuard";
+import { useFocusEffect } from "@react-navigation/native";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
@@ -21,7 +25,7 @@ import { useAccent } from "../../contexts/ThemeContext";
 import { ChatPlan, TransactionType } from "../../db/interfaces";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
-import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
+import { remainingAfterDay } from "../../helpers/wallet";
 import { ownerLabel } from "../../helpers/owners";
 import { setActiveChatTopic } from "../../notifications/chatPush";
 
@@ -42,7 +46,10 @@ function formatDay(iso: string) {
 const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
   const { topicId, title } = route.params;
   const headerHeight = useHeaderHeight();
+  const insets = useSafeAreaInsets();
+  const keyboardVisible = useKeyboardVisible();
   const { accent, surfaces } = useAccent();
+  const { confirmIfOverBudget, budgetGuardModal } = useBudgetGuard();
   const { members, profile } = useProfile();
   const { entries } = useFinance();
   const { messages, sendMessage, sendPlan } = useChat();
@@ -65,10 +72,10 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
     navigation.setOptions({ headerTitle: title });
   }, [navigation, title]);
 
-  useEffect(() => {
+  useFocusEffect(React.useCallback(() => {
     setActiveChatTopic(topicId);
     return () => setActiveChatTopic(null);
-  }, [topicId]);
+  }, [topicId]));
 
   useEffect(() => {
     const t = setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 80);
@@ -97,6 +104,10 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
       return;
     }
     const ok = await confirmIfOverBudget({
+      title: planName.trim() || planCategory,
+      category: planCategory,
+      date: planDate,
+      onReschedule: setPlanDate,
       remaining: remainingAfterDay(profile, entries, planDate),
       amount,
       isExpense: planType === "expense",
@@ -117,7 +128,7 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
 
   return (
     <KeyboardAvoidingView
-      style={styles.root}
+      style={[styles.root, { marginBottom: keyboardVisible ? 0 : Math.max(insets.bottom, 8) + 80 }]}
       behavior="padding"
       keyboardVerticalOffset={headerHeight}
     >
@@ -253,6 +264,7 @@ const ThreadScreen: React.FC<Props> = ({ route, navigation }) => {
           </View>
         </View>
       )}
+    {budgetGuardModal}
     </KeyboardAvoidingView>
   );
 };

@@ -8,7 +8,7 @@ import {
   removeGoal as deleteGoal,
   updateGoal as patchGoal,
 } from "../db/goals";
-import { addMember as insertMember, addMembers, listMembers, removeMember as deleteMember } from "../db/members";
+import { updateMemberDailySaldo, addMember as insertMember, addMembers, listMembers, removeMember as deleteMember } from "../db/members";
 import {
   createProfile,
   getProfile,
@@ -48,15 +48,16 @@ type ProfileContextValue = {
     accountType: AccountType;
     walletBalance: number;
   }) => Promise<void>;
+  setMemberDailySaldo: (id: number, amount: number) => Promise<void>;
   addMember: (member: NewMember) => Promise<Member | undefined>;
   removeMember: (id: number) => Promise<void>;
   setWalletBalance: (amount: number) => Promise<void>;
   setDailySaldo: (amount: number) => Promise<void>;
   setProfileName: (name: string) => Promise<void>;
-  addGoal: (input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => Promise<void>;
+  addGoal: (input: { priority?: number; category?: string; title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => Promise<void>;
   updateGoal: (
     id: string,
-    input: { title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
+    input: { priority?: number; category?: string; title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
   ) => Promise<void>;
   removeGoal: (id: string) => Promise<void>;
 };
@@ -131,7 +132,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     try {
       do {
         pullAgainRef.current = false;
-        await pullCloudBudgetIntoSqlite();
+        await pullCloudBudgetIntoSqlite(applySqlite);
         await applySqlite();
       } while (pullAgainRef.current);
     } catch {
@@ -236,11 +237,16 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
         }
       })();
     };
+    // Recover missed socket events while the app is active.
+    const timer = setInterval(() => {
+      if (AppState.currentState === "active") void pullLive();
+    }, 10000);
     const sub = AppState.addEventListener("change", onAppState);
 
     return () => {
       cancelled = true;
       disconnectLiveSync();
+      clearInterval(timer);
       sub.remove();
     };
   }, [isReady, user?.id, household?.id, pullLive, pushBudget, applySqlite]);
@@ -267,6 +273,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
             name: input.name,
             accountType: input.accountType,
             walletBalance,
+            recordWalletChange: true,
             walletSetOn: walletBalance == null ? null : toIsoDate(new Date()),
             walletAfterId: afterId,
             walletRecurringMonth: monthKey(),
@@ -363,12 +370,24 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
     return created;
   }, [profile, pushBudget]);
 
+  const setMemberDailySaldo = useCallback(async (id: number, amount: number) => {
+    if (!profile || !canAdmin || !members.some(member => member.id === id && member.role === "family")) return;
+    await updateMemberDailySaldo(profile.id, id, amount);
+    setMembers(await listMembers(profile.id));
+    try {
+      await pushBudget();
+    } catch {
+      // The local limit is saved and will sync later.
+    }
+  }, [profile, canAdmin, members, pushBudget]);
+
   const setWalletBalance = useCallback(async (amount: number) => {
     if (!profile) return;
     const entries = await listTransactions(profile.id);
     const afterId = entries.reduce((max, entry) => Math.max(max, entry.id), 0);
     const updated = await updateProfile(profile.id, {
       walletBalance: amount,
+      recordWalletChange: true,
       walletSetOn: toIsoDate(new Date()),
       walletAfterId: afterId,
     });
@@ -408,7 +427,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   }, [profile, pushBudget]);
 
   const addGoal = useCallback(
-    async (input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => {
+    async (input: { priority?: number; category?: string; title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => {
       if (!profile) return;
       const created = await insertGoal(profile.id, input);
       setGoals((current) => [created, ...current]);
@@ -424,7 +443,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const updateGoal = useCallback(
     async (
       id: string,
-      input: { title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
+      input: { priority?: number; category?: string; title?: string; targetAmount?: number; savedAmount?: number; deadline?: string | null }
     ) => {
       await patchGoal(id, input);
       setGoals((current) =>
@@ -433,6 +452,8 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
             ? {
                 ...goal,
                 title: input.title?.trim() || goal.title,
+                category: input.category ?? goal.category ?? "Inne",
+                priority: input.priority ?? goal.priority ?? 2,
                 targetAmount: input.targetAmount ?? goal.targetAmount,
                 savedAmount: input.savedAmount ?? goal.savedAmount,
                 deadline: input.deadline === undefined ? goal.deadline : input.deadline,
@@ -485,6 +506,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       switchAccount,
       addAccount,
       addMember,
+      setMemberDailySaldo,
       removeMember,
       setWalletBalance,
       setDailySaldo,
@@ -505,6 +527,7 @@ export const ProfileProvider: React.FC<{ children: React.ReactNode }> = ({ child
       switchAccount,
       addAccount,
       addMember,
+      setMemberDailySaldo,
       removeMember,
       setWalletBalance,
       setDailySaldo,

@@ -1,3 +1,6 @@
+import GoalCategoryPicker, { goalCategoryIcon } from "./GoalCategoryPicker";
+import GoalPriorityPicker from "./GoalPriorityPicker";
+import { orderedGoals } from "../helpers/goalAllocation";
 import React, { useState } from "react";
 import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
@@ -12,11 +15,12 @@ type GoalsEditorProps = {
   items: Goal[];
   readOnly?: boolean;
   autoSavedFor?: (goal: Goal) => number;
-  onAdd: (input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => void;
+  onAdd: (input: { priority?: number; category?: string; title: string; targetAmount: number; savedAmount: number; deadline: string | null }) => void;
   onUpdate: (
     id: string,
-    input: { title: string; targetAmount: number; savedAmount: number; deadline: string | null }
+    input: { priority?: number; category?: string; title: string; targetAmount: number; savedAmount: number; deadline: string | null }
   ) => void;
+  onOpen?: (id: string) => void;
   onRemove: (id: string) => void;
 };
 
@@ -32,12 +36,13 @@ export default function GoalsEditor({
   readOnly = false,
   autoSavedFor,
   onAdd,
-  onUpdate,
   onRemove,
+  onOpen,
 }: GoalsEditorProps) {
   const { accent, surfaces } = useAccent();
   const [formOpen, setFormOpen] = useState(false);
-  const [editingId, setEditingId] = useState<string | null>(null);
+  const [priority, setPriority] = useState(2);
+  const [category, setCategory] = useState("Inne");
   const [title, setTitle] = useState("");
   const [target, setTarget] = useState("");
   const [saved, setSaved] = useState("");
@@ -48,20 +53,12 @@ export default function GoalsEditor({
 
   const resetForm = () => {
     setFormOpen(false);
-    setEditingId(null);
     setTitle("");
+    setCategory("Inne");
+    setPriority(2);
     setTarget("");
     setSaved("");
     setDeadline(null);
-  };
-
-  const startEdit = (goal: Goal) => {
-    setEditingId(goal.id);
-    setFormOpen(true);
-    setTitle(goal.title);
-    setTarget(String(goal.targetAmount).replace(".", ","));
-    setSaved(goal.savedAmount ? String(goal.savedAmount).replace(".", ",") : "");
-    setDeadline(goal.deadline);
   };
 
   const submit = () => {
@@ -70,12 +67,13 @@ export default function GoalsEditor({
     const savedAmount = parseAmount(saved) ?? 0;
     const payload = {
       title: title.trim(),
+      category,
+      priority,
       targetAmount,
       savedAmount,
       deadline,
     };
-    if (editingId) onUpdate(editingId, payload);
-    else onAdd(payload);
+    onAdd(payload);
     resetForm();
   };
 
@@ -91,13 +89,15 @@ export default function GoalsEditor({
             }}
             hitSlop={8}
           >
-            <MaterialCommunityIcons name={formOpen ? "close" : "plus-circle-outline"} size={26} color={accent} />
+            <MaterialCommunityIcons name={formOpen ? "minus" : "plus"} size={26} color={accent} />
           </Pressable>
         )}
       </View>
 
       {formOpen && !readOnly ? (
         <>
+          <GoalCategoryPicker value={category} onChange={setCategory} />
+          <GoalPriorityPicker value={priority} onChange={setPriority} />
           <TextInput
             mode="outlined"
             label="Nazwa celu"
@@ -130,7 +130,7 @@ export default function GoalsEditor({
             outlineColor="#d7c8d3"
             activeOutlineColor={accent}
           />
-          <Text style={styles.hint}>Niewykorzystany dzienny limit z kolejnych dni dolicza się sam.</Text>
+          <Text style={styles.hint}>Niewykorzystany limit trafia do celów według priorytetu i kolejności dodania.</Text>
           <Pressable onPress={() => setDateOpen(true)} style={styles.deadlineRow}>
             <MaterialCommunityIcons name="calendar-outline" size={20} color={accent} />
             <Text style={styles.deadlineText}>
@@ -166,19 +166,18 @@ export default function GoalsEditor({
             onPress={submit}
             style={styles.addButton}
           >
-            {editingId ? "Zapisz cel" : "Dodaj cel"}
+            Dodaj cel
           </Button>
         </>
       ) : null}
 
       {items.length === 0 && !formOpen ? (
         <Text style={styles.empty}>
-          Nie dodano jeszcze celów — np. wakacje albo poduszka bezpieczeństwa. Niewykorzystany dzienny limit dolicza
-          się sam.
+          Nie dodano jeszcze celów — np. wakacje albo poduszka bezpieczeństwa. Niewykorzystany dzienny limit dzielimy według priorytetu i kolejności dodania.
         </Text>
       ) : (
         <View style={styles.list}>
-          {items.map((item) => {
+          {orderedGoals(items).map((item) => {
             const fromDays = autoSavedFor?.(item) ?? 0;
             const saved = Math.round((item.savedAmount + fromDays) * 100) / 100;
             const ratio = item.targetAmount > 0 ? Math.min(1, Math.max(0, saved / item.targetAmount)) : 0;
@@ -186,7 +185,26 @@ export default function GoalsEditor({
             return (
               <View key={item.id} style={[styles.row, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}>
                 <View style={styles.rowCopy}>
-                  <Text style={styles.personName}>{item.title}</Text>
+                  <View style={styles.goalTitleRow}><MaterialCommunityIcons name={goalCategoryIcon(item.category)} size={21} color={accent} /><Text style={[styles.personName, { flex: 1 }]}>{item.title}</Text>                <View style={styles.rowActions}>
+                {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={"Zobacz plan celu: " + item.title} onPress={() => onOpen(item.id)} style={styles.iconButton}><MaterialCommunityIcons name="clipboard-text-outline" size={22} color={accent} /></Pressable> : null}
+                {readOnly ? null : (
+                  <>
+                    <Pressable
+                      onPress={() => {
+                        Alert.alert("Usunąć cel?", item.title, [
+                          { text: "Anuluj", style: "cancel" },
+                          { text: "Usuń", style: "destructive", onPress: () => onRemove(item.id) },
+                        ]);
+                      }}
+                      style={styles.iconButton}
+                      accessibilityRole="button"
+                      accessibilityLabel={"Usuń cel: " + item.title}
+                    >
+                      <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
+                    </Pressable>
+                  </>
+                )}
+                </View></View>
                   <Text style={styles.personMeta}>
                     {formatPln(saved)} z {formatPln(item.targetAmount)}
                     {item.deadline ? ` · do ${formatDeadline(item.deadline)}` : ""}
@@ -194,7 +212,7 @@ export default function GoalsEditor({
                   {fromDays > 0 ? (
                     <Text style={styles.personMeta}>w tym {formatPln(fromDays)} z dziennych limitów</Text>
                   ) : null}
-                  <View style={styles.track}>
+                  <View style={[styles.track, { backgroundColor: surfaces.border }]}>
                     <View
                       style={[
                         styles.fill,
@@ -203,24 +221,7 @@ export default function GoalsEditor({
                     />
                   </View>
                 </View>
-                {readOnly ? null : (
-                  <>
-                    <Pressable onPress={() => startEdit(item)} hitSlop={8}>
-                      <MaterialCommunityIcons name="pencil-outline" size={22} color={accent} />
-                    </Pressable>
-                    <Pressable
-                      onPress={() => {
-                        Alert.alert("Usunąć cel?", item.title, [
-                          { text: "Anuluj", style: "cancel" },
-                          { text: "Usuń", style: "destructive", onPress: () => onRemove(item.id) },
-                        ]);
-                      }}
-                      hitSlop={8}
-                    >
-                      <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
-                    </Pressable>
-                  </>
-                )}
+
               </View>
             );
           })}
@@ -231,6 +232,9 @@ export default function GoalsEditor({
 }
 
 const styles = StyleSheet.create({
+  goalTitleRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  rowActions: { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 4 },
+  iconButton: { width: 38, height: 38, alignItems: "center", justifyContent: "center" },
   wrap: {
     marginTop: 8,
     marginBottom: 8,
@@ -285,8 +289,8 @@ const styles = StyleSheet.create({
     gap: 10,
   },
   row: {
-    flexDirection: "row",
-    alignItems: "center",
+    flexDirection: "column",
+    alignItems: "stretch",
     gap: 12,
     borderWidth: 1,
     borderColor: "#eadfe6",
@@ -295,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#fdf8fb",
   },
   rowCopy: {
-    flex: 1,
+    width: "100%",
   },
   personName: {
     fontFamily: "MontserratSemiBold",

@@ -7,6 +7,8 @@ import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { useAccent } from "../contexts/ThemeContext";
 import { hexToRGB } from "../helpers/colors";
+import tinycolor from "tinycolor2";
+import { useKeyboardVisible } from "../helpers/useKeyboardVisible";
 
 function useLiquidGlass() {
   if (Platform.OS !== "ios") return false;
@@ -21,7 +23,10 @@ export default function GlassTabBar({ state, descriptors, navigation }: BottomTa
   const insets = useSafeAreaInsets();
   const { accent } = useAccent();
   const liquid = useLiquidGlass();
+  const keyboardVisible = useKeyboardVisible();
   const bottomPad = Math.max(insets.bottom, 8);
+  const pillTint = tinycolor.mix(accent, "#ffffff", 94).toHexString();
+  if (keyboardVisible) return null;
 
   const items = (
     <View style={styles.row}>
@@ -48,7 +53,7 @@ export default function GlassTabBar({ state, descriptors, navigation }: BottomTa
                 target: state.key,
               });
             }}
-            style={styles.item}
+            style={[styles.item, focused && { backgroundColor: hexToRGB(accent, 0.12) }]}
           >
             {options.tabBarIcon?.({ focused, color, size: 22 }) ?? null}
             <Text numberOfLines={1} style={[styles.label, { color }]}>
@@ -61,25 +66,28 @@ export default function GlassTabBar({ state, descriptors, navigation }: BottomTa
   );
 
   return (
-    <View style={[styles.wrap, { paddingBottom: bottomPad }]}>
-      <View style={styles.pill}>
+    <View pointerEvents="box-none" style={[styles.wrap, { paddingBottom: bottomPad }]}>
+      <View style={styles.shadow}>
+      <View style={[styles.pill, { backgroundColor: tinycolor(pillTint).setAlpha(0.94).toRgbString(), borderColor: hexToRGB(accent, 0.08) }]}>
         {liquid ? (
           <GlassView
             style={StyleSheet.absoluteFill}
             glassEffectStyle="regular"
-            tintColor={hexToRGB(accent, 0.18)}
+            tintColor={hexToRGB(accent, 0.06)}
             isInteractive
             pointerEvents="none"
           />
-        ) : (
+        ) : Platform.OS === "ios" ? (
           <BlurView
             style={StyleSheet.absoluteFill}
-            intensity={64}
+            intensity={45}
             tint="light"
             pointerEvents="none"
           />
-        )}
+        ) : null}
+        <View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: tinycolor(pillTint).setAlpha(liquid ? 0.45 : 0.55).toRgbString() }]} />
         {items}
+      </View>
       </View>
     </View>
   );
@@ -87,26 +95,33 @@ export default function GlassTabBar({ state, descriptors, navigation }: BottomTa
 
 const styles = StyleSheet.create({
   wrap: {
-    paddingHorizontal: 12,
-    paddingTop: 6,
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
+    paddingHorizontal: 14,
+    paddingTop: 8,
     backgroundColor: "transparent",
   },
+  shadow: { borderRadius: 34, shadowColor: "#342330", shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.12, shadowRadius: 10, elevation: 7, backgroundColor: "transparent" },
   pill: {
     overflow: "hidden",
-    borderRadius: 28,
+    borderRadius: 34,
     borderWidth: StyleSheet.hairlineWidth,
     borderColor: "rgba(255,255,255,0.55)",
     backgroundColor: "rgba(255,255,255,0.28)",
   },
   row: {
     flexDirection: "row",
-    minHeight: 58,
+    minHeight: 64,
     alignItems: "center",
-    paddingVertical: 8,
-    paddingHorizontal: 4,
+    paddingVertical: 5,
+    paddingHorizontal: 6,
   },
   item: {
     flex: 1,
+    paddingVertical: 8,
+    borderRadius: 28,
     alignItems: "center",
     justifyContent: "center",
     gap: 3,

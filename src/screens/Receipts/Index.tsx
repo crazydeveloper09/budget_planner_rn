@@ -1,3 +1,6 @@
+import { useBottomTabBarHeight } from "@react-navigation/bottom-tabs";
+import { useKeyboardVisible } from "../../helpers/useKeyboardVisible";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import React, { useMemo, useState } from "react";
 import { Alert, FlatList, Image, Pressable, ScrollView, StyleSheet, View } from "react-native";
 import { Text, TextInput } from "react-native-paper";
@@ -31,6 +34,10 @@ function monthLabel(key: string) {
 
 const ReceiptsIndexScreen: React.FC = () => {
   const { accent, surfaces } = useAccent();
+  const insets = useSafeAreaInsets();
+  const tabBarHeight = useBottomTabBarHeight();
+  const keyboardVisible = useKeyboardVisible();
+  const menuClearance = Math.max(tabBarHeight, Math.max(insets.bottom, 8) + 80);
   const { receipts, removeReceipt } = useFinance();
   const [open, setOpen] = useState<Receipt | null>(null);
   const [adding, setAdding] = useState(false);
@@ -163,7 +170,7 @@ const ReceiptsIndexScreen: React.FC = () => {
           data={data}
           keyExtractor={(item) => item.id}
           numColumns={2}
-          contentContainerStyle={styles.list}
+          contentContainerStyle={[styles.list, { paddingBottom: menuClearance + 96 }]}
           columnWrapperStyle={styles.row}
           renderItem={({ item }) => (
             <Pressable
@@ -175,6 +182,7 @@ const ReceiptsIndexScreen: React.FC = () => {
               <Text style={styles.cardTitle} numberOfLines={1}>
                 {item.name || item.category}
               </Text>
+              {item.standalone ? <Text style={styles.meta}>Poza planem wydatków</Text> : null}
               <Text style={[styles.meta, { color: accent }]} numberOfLines={2}>
                 {formatDay(item.date)} · {formatPln(item.amount)}
               </Text>
@@ -183,9 +191,9 @@ const ReceiptsIndexScreen: React.FC = () => {
         />
       )}
 
-      <Pressable onPress={() => setAdding(true)} style={[styles.fab, { backgroundColor: accent }]}>
+      {!keyboardVisible ? <Pressable accessibilityRole="button" accessibilityLabel="Dodaj paragon" onPress={() => setAdding(true)} style={[styles.fab, { backgroundColor: accent, bottom: menuClearance + 20 }]}>
         <MaterialCommunityIcons name="plus" size={28} color="#fff" />
-      </Pressable>
+      </Pressable> : null}
 
       <AddReceiptModal visible={adding} onClose={() => setAdding(false)} />
       <ReceiptPreviewModal

@@ -1,0 +1,22 @@
+const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const ts = require('typescript');
+const calls = [];
+const row = { id: 'standalone', user_id: 1, entry_id: null, standalone: 1, entry_date: '2026-11-05', title: 'Sklep', category: 'Zakupy', amount: 50, owner_name: null, created_at: '', file_name: 'receipt.jpg' };
+const db = { getAllAsync: async () => [row, { ...row, id: 'linked', standalone: 0 }], runAsync: async (sql, params) => calls.push({ sql, params }) };
+const mod = { exports: {} };
+const code = ts.transpileModule(fs.readFileSync('src/db/receipts.ts', 'utf8'), { compilerOptions: { module: ts.ModuleKind.CommonJS } }).outputText;
+new Function('require', 'module', 'exports', code)(name => name === './init' ? { getDb: async () => db } : { receiptUri: name => name }, mod, mod.exports);
+(async () => {
+  const entry = { id: 7, date: row.entry_date, name: row.title, category: row.category, amount: 50, type: 'expense', regular: false };
+  await mod.exports.rematchReceipts(1, [entry]);
+  assert.deepEqual(calls.map(c => c.params), [[7, 'linked']], 'Standalone receipts must never attach to identical expenses');
+  calls.length = 0;
+  const input = { id: 'standalone', entryId: null, standalone: true, date: entry.date, name: entry.name, category: entry.category, amount: 50, ownerName: null, createdAt: '', fileName: 'receipt.jpg', uri: '' };
+  const restored = await mod.exports.replaceReceipts(1, [input, { ...input, id: 'linked', standalone: false }], [entry]);
+  assert.equal(restored.length, 2, 'Restore must retain standalone receipts');
+  assert.equal(restored[0].entryId, null);
+  assert.equal(restored[1].entryId, 7, 'Standalone receipt must not consume matching expense');
+  assert.equal(calls[0].params.at(-1), 1, 'Persist standalone flag');
+  console.log('Receipt independence checks passed');
+})().catch(error => { console.error(error); process.exitCode = 1; });

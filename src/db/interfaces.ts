@@ -1,5 +1,13 @@
 export type AccountType = "personal" | "business" | "family";
 
+export type WalletAdjustment = {
+  id: string;
+  date: string;
+  createdAt: string | null;
+  before: number | null;
+  after: number;
+};
+
 export interface User {
   id: number;
   name: string;
@@ -10,6 +18,7 @@ export interface User {
   walletSetOn: string | null;
   walletAfterId: number;
   walletRecurringMonth: string | null;
+  walletHistory?: WalletAdjustment[];
 }
 
 export type MemberRole = "family" | "employee";
@@ -42,6 +51,7 @@ export interface Transaction {
 export type NewTransaction = Omit<Transaction, "id" | "userId">;
 
 export type Receipt = {
+  standalone?: boolean;
   id: string;
   userId: number;
   entryId: number | null;
@@ -58,6 +68,8 @@ export type Receipt = {
 export type NewReceipt = Omit<Receipt, "userId">;
 
 export type Goal = {
+  priority?: number;
+  category?: string;
   id: string;
   userId: number;
   title: string;

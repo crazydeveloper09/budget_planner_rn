@@ -1,5 +1,7 @@
 import { getProfile, updateProfile } from "../db/profile";
 import { addTransaction, listTransactions } from "../db/transactions";
+import { recurringDate } from "./spendingPlan";
+import { toIsoDate } from "./dates";
 import { monthKey } from "./dates";
 import { Transaction } from "../db/interfaces";
 
@@ -12,37 +14,28 @@ export async function applyMonthlyRecurringIfDue(): Promise<boolean> {
   if (!profile) return false;
 
   const now = new Date();
-  if (now.getDate() < 10) return false;
-
   const currentMonth = monthKey(now);
-  if (profile.walletRecurringMonth === currentMonth) return false;
-
-  if (!profile.walletRecurringMonth) {
-    await updateProfile(profile.id, { walletRecurringMonth: currentMonth });
-    return true;
-  }
-
-  const applyDate = `${currentMonth}-10`;
+  const today = toIsoDate(now);
   const entries = await listTransactions(profile.id);
-  const posted = new Set(
-    entries.filter((entry) => !entry.regular && entry.date === applyDate).map(stamp)
-  );
-  const recurring = entries.filter((entry) => entry.regular);
-
-  for (const item of recurring) {
-    if (posted.has(stamp(item))) continue;
+  const posted = new Set(entries.filter(entry => !entry.regular).map(entry => entry.date + "|" + stamp(entry)));
+  let changed = false;
+  for (const item of entries.filter(entry => entry.regular)) {
+    const applyDate = toIsoDate(recurringDate(item, now));
+    // The wallet snapshot already includes transactions on and before its date.
+    if (applyDate > today || (profile.walletSetOn && applyDate <= profile.walletSetOn)) continue;
+    if (item.date > applyDate) continue;
+    const key = applyDate + "|" + stamp(item);
+    if (posted.has(key)) continue;
     await addTransaction(profile.id, {
-      date: applyDate,
-      type: item.type,
-      name: item.name,
-      category: item.category,
-      amount: item.amount,
-      regular: false,
-      memberId: item.memberId,
+      date: applyDate, type: item.type, name: item.name, category: item.category,
+      amount: item.amount, regular: false, memberId: item.memberId,
     });
-    posted.add(stamp(item));
+    posted.add(key);
+    changed = true;
   }
-
-  await updateProfile(profile.id, { walletRecurringMonth: currentMonth });
-  return true;
+  if (profile.walletRecurringMonth !== currentMonth) {
+    await updateProfile(profile.id, { walletRecurringMonth: currentMonth });
+    changed = true;
+  }
+  return changed;
 }

@@ -6,6 +6,7 @@ import { useAccent } from "../contexts/ThemeContext";
 import { Member, NewTransaction, Transaction, TransactionType } from "../db/interfaces";
 import { formatPln, parseAmount } from "../helpers/money";
 import { ownerLabel } from "../helpers/owners";
+import { toIsoDate } from "../helpers/dates";
 import CategoryPicker from "./CategoryPicker";
 import EditEntryModal from "./EditEntryModal";
 import OwnerPicker from "./OwnerPicker";
@@ -19,7 +20,7 @@ type RecurringEntriesEditorProps = {
   members?: Member[];
   showOwnerPicker?: boolean;
   readOnly?: boolean;
-  onAdd: (input: { name: string; category: string; amount: number; memberId: number | null }) => void;
+  onAdd: (input: { name: string; category: string; amount: number; memberId: number | null; date: string }) => void;
   onUpdate: (id: number, input: NewTransaction) => void;
   onRemove: (id: number) => void;
 };
@@ -45,20 +46,23 @@ export default function RecurringEntriesEditor({
   const [amount, setAmount] = useState("");
   const [memberId, setMemberId] = useState<number | null>(null);
 
-  const canAdd = category.length > 0 && parseAmount(amount) !== null;
+  const [day, setDay] = useState("10");
+  const validDay = /^\d{1,2}$/.test(day) && Number(day) >= 1 && Number(day) <= 31;
+  const canAdd = (kind !== "income" || validDay) && category.length > 0 && parseAmount(amount) !== null;
 
   const resetForm = () => {
     setName("");
     setCategory("");
     setAmount("");
     setMemberId(null);
+    setDay("10");
     setFormOpen(false);
   };
 
   const submit = () => {
     const parsed = parseAmount(amount);
-    if (!category || parsed === null) return;
-    onAdd({ name: name.trim(), category, amount: parsed, memberId });
+    if (!category || parsed === null || !canAdd) return;
+    onAdd({ name: name.trim(), category, amount: parsed, memberId, date: kind === "income" ? `2000-01-${day.padStart(2, "0")}` : toIsoDate(new Date()) });
     resetForm();
   };
 
@@ -109,7 +113,8 @@ export default function RecurringEntriesEditor({
             outlineColor="#d7c8d3"
             activeOutlineColor={accent}
           />
-          <CategoryPicker type={kind} value={category} onChange={setCategory} />
+          {kind === "income" ? <><TextInput mode="outlined" label="Dzień wpływu w miesiącu (1–31)" value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /><Text>W krótszym miesiącu: ostatni dzień miesiąca.</Text></> : null}
+          <CategoryPicker recurring type={kind} value={category} onChange={setCategory} />
           <Button
             mode="outlined"
             onPress={submit}
@@ -132,6 +137,7 @@ export default function RecurringEntriesEditor({
                 <Text style={styles.personName}>{item.name || item.category}</Text>
                 <Text style={styles.personMeta}>
                   {item.category} · {formatPln(item.amount)} / miesiąc
+                  {kind === "income" ? ` · ${item.date.startsWith("2000-01-") ? Number(item.date.slice(8, 10)) : 10}. dzień miesiąca` : ""}
                   {showOwnerPicker ? ` · ${ownerLabel(item.memberId, members)}` : ""}
                 </Text>
               </View>

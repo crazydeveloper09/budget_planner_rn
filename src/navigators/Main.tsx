@@ -1,9 +1,6 @@
 import { FontAwesome, FontAwesome5, MaterialCommunityIcons } from "@expo/vector-icons";
 import { createBottomTabNavigator } from "@react-navigation/bottom-tabs";
-import { CommonActions } from "@react-navigation/native";
-import { BottomNavigation } from "react-native-paper";
-import { Platform, StatusBar, StyleSheet, View } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { StyleSheet, View } from "react-native";
 import { useProfile } from "../contexts/ProfileContext";
 import ChatNavigator from "./Chat";
 import ExpensesNavigator from "./Expense";
@@ -14,11 +11,8 @@ import SettingsNavigator from "./Settings";
 
 const Tab = createBottomTabNavigator();
 
-StatusBar.setBarStyle("light-content");
-
 const MainNavigator = () => {
   const { profile } = useProfile();
-  const safe = useSafeAreaInsets();
   const showChat = profile?.accountType === "family" || profile?.accountType === "business";
   return (
     <View style={styles.root}>
@@ -29,51 +23,7 @@ const MainNavigator = () => {
           headerShown: false,
           sceneStyle: styles.scene,
         }}
-        tabBar={(props) =>
-          Platform.OS === "ios" ? (
-            <GlassTabBar {...props} />
-          ) : (
-            <BottomNavigation.Bar
-              navigationState={props.state}
-              compact={false}
-              shifting={false}
-              safeAreaInsets={{
-                top: 0,
-                left: Math.max(props.insets.left, safe.left),
-                right: Math.max(props.insets.right, safe.right),
-                bottom: Math.max(props.insets.bottom, safe.bottom),
-              }}
-              onTabPress={({ route, preventDefault }) => {
-                const event = props.navigation.emit({
-                  type: "tabPress",
-                  target: route.key,
-                  canPreventDefault: true,
-                });
-
-                if (event.defaultPrevented) {
-                  preventDefault();
-                } else {
-                  props.navigation.dispatch({
-                    ...CommonActions.navigate(route.name, route.params),
-                    target: props.state.key,
-                  });
-                }
-              }}
-              renderIcon={({ route, focused, color }) =>
-                props.descriptors[route.key].options.tabBarIcon?.({
-                  focused,
-                  color,
-                  size: 24,
-                }) ?? null
-              }
-              getLabelText={({ route }) => {
-                const { options } = props.descriptors[route.key];
-                const label = options.tabBarLabel ?? options.title ?? route.name;
-                return typeof label === "string" ? label : undefined;
-              }}
-            />
-          )
-        }
+        tabBar={(props) => <GlassTabBar {...props} />}
       >
         <Tab.Screen
           name="Expenses"

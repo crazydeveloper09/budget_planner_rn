@@ -1,4 +1,4 @@
-import { Platform } from "react-native";
+import { AppState, Platform } from "react-native";
 import Constants from "expo-constants";
 import * as SecureStore from "expo-secure-store";
 import { api } from "../api/client";
@@ -24,7 +24,7 @@ export async function configureChatNotificationHandler() {
     Notifications.setNotificationHandler({
       handleNotification: async (notification) => {
         const data = notification.request.content.data as { topicId?: string };
-        const suppress = Boolean(data?.topicId && data.topicId === activeTopicId);
+        const suppress = Boolean(AppState.currentState === "active" && data?.topicId && data.topicId === activeTopicId);
         return {
           shouldShowAlert: !suppress,
           shouldShowBanner: !suppress,
@@ -54,7 +54,7 @@ export async function registerChatPushToken() {
         4000
       );
     }
-    const permission = await withTimeout(Notifications.requestPermissionsAsync(), 4000);
+    const permission = await Notifications.requestPermissionsAsync();
     if (permission.status !== "granted") return;
     const projectId =
       Constants.expoConfig?.extra?.eas?.projectId ?? Constants.easConfig?.projectId;
@@ -64,8 +64,9 @@ export async function registerChatPushToken() {
     ).data;
     await SecureStore.setItemAsync(PUSH_TOKEN_KEY, token);
     await api.put("/me/push-token", { token });
-  } catch {
-    // Huawei / Motorola / brak GMS / FCM
+  } catch (error) {
+    console.warn("Chat push registration failed", error);
+    throw error;
   }
 }
 

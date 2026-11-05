@@ -1,3 +1,4 @@
+import { useBudgetGuard } from "./useBudgetGuard";
 import React, { useEffect, useState } from "react";
 import {
   KeyboardAvoidingView,
@@ -18,7 +19,7 @@ import { useAccent } from "../contexts/ThemeContext";
 import { NewTransaction, Transaction } from "../db/interfaces";
 import { parsePickedDate, toIsoDate } from "../helpers/dates";
 import { parseAmount } from "../helpers/money";
-import { confirmIfOverBudget, remainingAfterDay } from "../helpers/wallet";
+import { remainingAfterDay } from "../helpers/wallet";
 import CategoryPicker from "./CategoryPicker";
 import OwnerPicker from "./OwnerPicker";
 
@@ -47,6 +48,7 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
   onSave,
 }) => {
   const { accent } = useAccent();
+  const { confirmIfOverBudget, budgetGuardModal } = useBudgetGuard();
   const { profile, members } = useProfile();
   const { entries } = useFinance();
   const [date, setDate] = useState(toIsoDate(new Date()));
@@ -55,11 +57,13 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [memberId, setMemberId] = useState<number | null>(null);
+  const [day, setDay] = useState("10");
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (!entry) return;
     setDate(entry.date);
+    setDay(entry.date.startsWith("2000-01-") ? String(Number(entry.date.slice(8, 10))) : "10");
     setName(entry.name);
     setCategory(entry.category);
     setAmount(String(entry.amount).replace(".", ","));
@@ -69,7 +73,8 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
 
   const leftover = remainingAfterDay(profile, entries, date);
   const extra = entry && entry.type === "expense" && entry.date === date ? entry.amount : 0;
-  const canSave = Boolean(category) && parseAmount(amount) !== null;
+  const validDay = /^\d{1,2}$/.test(day) && Number(day) >= 1 && Number(day) <= 31;
+  const canSave = (!entry?.regular || entry.type !== "income" || validDay) && Boolean(category) && parseAmount(amount) !== null;
   const type = entry?.type ?? "expense";
   const title =
     type === "expense"
@@ -82,8 +87,13 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
 
   const save = async () => {
     const parsed = parseAmount(amount);
-    if (!entry || !category || parsed === null) return;
+    if (!entry || !canSave || parsed === null) return;
     const ok = await confirmIfOverBudget({
+      title: name.trim() || category,
+      category,
+      date,
+      excludeEntryId: entry.id,
+      onReschedule: setDate,
       remaining: leftover == null ? null : leftover + extra,
       amount: parsed,
       isExpense: type === "expense" && !entry.regular,
@@ -92,7 +102,7 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
     setSaving(true);
     try {
       await onSave({
-        date,
+        date: entry.regular && entry.type === "income" ? `2000-01-${day.padStart(2, "0")}` : date,
         type: entry.type,
         name: name.trim(),
         category,
@@ -156,7 +166,8 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
               outlineColor="#d7c8d3"
               activeOutlineColor={accent}
             />
-            <CategoryPicker type={type} value={category} onChange={setCategory} />
+            {entry?.regular && type === "income" ? <TextInput mode="outlined" label="Dzień wpływu w miesiącu (1–31)" value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /> : null}
+            <CategoryPicker recurring={entry?.regular} type={type} value={category} onChange={setCategory} />
             <Button
               mode="contained"
               onPress={() => void save()}
@@ -180,7 +191,8 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
             confirmTextIOS="Wybierz"
             cancelTextIOS="Anuluj"
           />
-        </KeyboardAvoidingView>
+        {budgetGuardModal}
+    </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );

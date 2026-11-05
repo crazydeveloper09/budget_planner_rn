@@ -1,3 +1,7 @@
+import { useHeaderHeight } from "@react-navigation/elements";
+import { useKeyboardVisible } from "../../helpers/useKeyboardVisible";
+import { CommonActions, useNavigation } from "@react-navigation/native";
+import { useBudgetGuard } from "../../components/useBudgetGuard";
 import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
@@ -26,8 +30,8 @@ import ReceiptPreviewModal from "../../components/ReceiptPreviewModal";
 import EditEntryModal from "../../components/EditEntryModal";
 import { useAccent } from "../../contexts/ThemeContext";
 import { ownerLabel } from "../../helpers/owners";
-import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
-import { howManySaved, totalExpenses, totalIncomings } from "./helpers/countSum";
+import { remainingAfterDay } from "../../helpers/wallet";
+import { totalExpenses, totalIncomings } from "./helpers/countSum";
 
 const EXPENSE_COLOR = "#b42318";
 const INCOME_COLOR = "#2D6A4F";
@@ -126,8 +130,12 @@ const DayEntryRow: React.FC<DayEntryRowProps> = ({
 };
 
 const ExpensesIndexScreen: React.FC = () => {
+  const navigation = useNavigation();
+  const headerHeight = useHeaderHeight();
+  const keyboardVisible = useKeyboardVisible();
   const { accent, surfaces } = useAccent();
   const { profile, members } = useProfile();
+  const { confirmIfOverBudget, budgetGuardModal } = useBudgetGuard();
   const { entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt } = useFinance();
   const [selectedStartDate, setSelectedStartDate] = useState<Date>(new Date());
   const [formType, setFormType] = useState<TransactionType | null>(null);
@@ -157,11 +165,6 @@ const ExpensesIndexScreen: React.FC = () => {
   const spent = totalExpenses(dayEntries);
   const incoming = totalIncomings(dayEntries);
   const isToday = selectedIso === toIsoDate(new Date());
-  const dailySaldo =
-    profile?.accountType === "family"
-      ? members.reduce((sum, member) => sum + (member.dailySaldo ?? 0), 0)
-      : profile?.dailySaldo ?? 100;
-  const saved = howManySaved(incoming, spent, dailySaldo);
   const leftover = remainingAfterDay(profile, entries, selectedIso);
   const leftoverLabel = isToday ? "Po dzisiejszym dniu zostanie" : "Po tym dniu zostanie";
   const markedDays = useMemo(() => {
@@ -194,6 +197,10 @@ const ExpensesIndexScreen: React.FC = () => {
     const parsed = parseAmount(amount);
     if (!formType || !category || parsed === null) return;
     const ok = await confirmIfOverBudget({
+      title: name.trim() || category,
+      category,
+      date: selectedIso,
+      onReschedule: (value) => setSelectedStartDate(parsePickedDate(value)),
       remaining: leftover,
       amount: parsed,
       isExpense: formType === "expense",
@@ -225,10 +232,10 @@ const ExpensesIndexScreen: React.FC = () => {
   };
 
   return (
-    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+    <KeyboardAvoidingView style={styles.flex} behavior={Platform.OS === "ios" ? "padding" : undefined} keyboardVerticalOffset={headerHeight}>
     <ScrollView
       style={styles.container}
-      contentContainerStyle={styles.content}
+      contentContainerStyle={[styles.content, keyboardVisible && { paddingBottom: 24 }]}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="interactive"
     >
@@ -320,7 +327,7 @@ const ExpensesIndexScreen: React.FC = () => {
       ) : null}
 
       <View style={styles.summaryContainer}>
-        <Text style={styles.dayHeading}>{formatDayHeading(selectedStartDate, isToday)}</Text>
+        <View style={styles.dayHeadingRow}><Text style={styles.dayHeading}>{formatDayHeading(selectedStartDate, isToday)}</Text><Pressable accessibilityRole="button" accessibilityLabel="Dzienny limit i oszczędności" onPress={() => navigation.dispatch(CommonActions.navigate({ name: "User", params: { screen: "DailyBudget" } }))} style={styles.dailyLink}><MaterialCommunityIcons name="piggy-bank-outline" size={25} color="#111" /></Pressable></View>
 
         <View style={styles.totals}>
           <View style={[styles.totalCard, { backgroundColor: "#fdecea", borderColor: "#f4c7c3" }]}>
@@ -333,17 +340,14 @@ const ExpensesIndexScreen: React.FC = () => {
           </View>
         </View>
 
-        <Text style={styles.summaryLine}>
-          {saved > 0
-            ? `Z dziennego limitu zostaje ${formatPln(saved)}`
-            : "Dzienny limit na ten dzień został wykorzystany"}
-        </Text>
+
         {leftover == null ? (
           <Text style={styles.summaryLine}>Stan konta ustawisz w Profilu</Text>
         ) : (
-          <Text style={[styles.summaryLine, leftover < 0 && styles.summaryWarn]}>
-            {leftoverLabel}: {formatPln(leftover)}
-          </Text>
+          <View style={[styles.totalCard, { flex: 0, backgroundColor: leftover < 0 ? "#fdecea" : surfaces.surface, borderColor: leftover < 0 ? "#f4c7c3" : surfaces.border }]}>
+            <Text style={styles.totalLabel}>{leftoverLabel}</Text>
+            <Text style={[styles.totalValue, { color: leftover < 0 ? EXPENSE_COLOR : accent }]}>{formatPln(leftover)}</Text>
+          </View>
         )}
 
         {dayEntries.length === 0 ? (
@@ -442,11 +446,14 @@ const ExpensesIndexScreen: React.FC = () => {
         ]);
       }}
     />
+    {budgetGuardModal}
     </KeyboardAvoidingView>
   );
 };
 
 const styles = StyleSheet.create({
+  dayHeadingRow: { flexDirection: "row", gap: 10, alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
+  dailyLink: { width: 42, height: 42, borderRadius: 13, alignItems: "center", justifyContent: "center" },
   flex: { flex: 1, backgroundColor: "#fff" },
   container: {
     flex: 1,
@@ -498,10 +505,10 @@ const styles = StyleSheet.create({
     paddingVertical: 20,
   },
   dayHeading: {
+    flex: 1,
     fontFamily: "MontserratSemiBold",
     fontSize: 18,
     color: "#1f1220",
-    marginBottom: 12,
   },
   totals: {
     flexDirection: "row",

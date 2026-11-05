@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Modal, Pressable, StyleSheet, View } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAccent } from "../contexts/ThemeContext";
@@ -11,6 +11,7 @@ type PeopleEditorProps = {
   accountType: Extract<AccountType, "family" | "business">;
   people: NewMember[];
   onAdd: (person: NewMember) => void;
+  onUpdateDailySaldo?: (index: number, amount: number) => Promise<void>;
   onRemove: (index: number) => void;
   collapseForm?: boolean;
   readOnly?: boolean;
@@ -24,6 +25,7 @@ export default function PeopleEditor({
   people,
   onAdd,
   onRemove,
+  onUpdateDailySaldo,
   collapseForm = false,
   readOnly = false,
   canInvite = false,
@@ -35,6 +37,9 @@ export default function PeopleEditor({
   const [formOpen, setFormOpen] = useState(!collapseForm);
   const [name, setName] = useState("");
   const [dailySaldo, setDailySaldo] = useState("");
+  const [editingIndex, setEditingIndex] = useState<number | null>(null);
+  const [limitDraft, setLimitDraft] = useState("");
+  const [savingLimit, setSavingLimit] = useState(false);
   const [salary, setSalary] = useState("");
 
   const title = isFamily ? "Członkowie rodziny" : "Pracownicy";
@@ -85,6 +90,26 @@ export default function PeopleEditor({
 
   return (
     <View>
+      <Modal visible={editingIndex !== null && !readOnly} transparent animationType="fade" onRequestClose={() => { if (!savingLimit) setEditingIndex(null); }}>
+        <View style={styles.modalBackdrop}>
+          <View style={[styles.modalCard, { backgroundColor: surfaces.surface }]}>
+            <Text style={styles.sectionTitle}>Dzienny limit: {editingIndex == null ? "" : people[editingIndex]?.name}</Text>
+            <TextInput mode="outlined" label="Dzienny limit" value={limitDraft} onChangeText={setLimitDraft} keyboardType="decimal-pad" disabled={savingLimit} style={styles.input} />
+            <Button mode="contained" buttonColor={accent} loading={savingLimit} disabled={savingLimit || parseAmount(limitDraft) === null} onPress={async () => {
+              const amount = parseAmount(limitDraft);
+              if (editingIndex == null || amount == null || !onUpdateDailySaldo) return;
+              setSavingLimit(true);
+              try {
+                await onUpdateDailySaldo(editingIndex, amount);
+                setEditingIndex(null);
+              } catch {
+                Alert.alert("Nie zapisano limitu", "Spróbuj ponownie.");
+              } finally { setSavingLimit(false); }
+            }}>Zapisz limit</Button>
+            <Button disabled={savingLimit} onPress={() => setEditingIndex(null)}>Anuluj</Button>
+          </View>
+        </View>
+      </Modal>
       <View style={styles.sectionHeader}>
         <Text style={styles.sectionTitle}>{title}</Text>
         {collapseForm && !readOnly ? (
@@ -113,7 +138,7 @@ export default function PeopleEditor({
       {isFamily ? (
         <TextInput
           mode="outlined"
-          label="Codzienne saldo"
+          label="Dzienny limit"
           placeholder="np. 150"
           value={dailySaldo}
           onChangeText={setDailySaldo}
@@ -159,7 +184,7 @@ export default function PeopleEditor({
                 <Text style={styles.personName}>{person.name}</Text>
                 {isFamily ? (
                   <Text style={styles.personMeta}>
-                    Saldo {formatPln(person.dailySaldo ?? 0)} / dzień
+                    Limit {formatPln(person.dailySaldo ?? 0)} / dzień
                     {cloud?.linked ? " · ma konto" : cloud?.inviteCode ? ` · kod ${cloud.inviteCode}` : ""}
                   </Text>
                 ) : (
@@ -172,6 +197,11 @@ export default function PeopleEditor({
               {canInvite && !cloud?.linked ? (
                 <Pressable onPress={() => onInvite?.(person.name)} hitSlop={8}>
                   <MaterialCommunityIcons name="email-plus-outline" size={22} color={accent} />
+                </Pressable>
+              ) : null}
+              {isFamily && !readOnly && onUpdateDailySaldo ? (
+                <Pressable accessibilityRole="button" accessibilityLabel={"Edytuj dzienny limit: " + person.name} onPress={() => { setEditingIndex(index); setLimitDraft(String(person.dailySaldo ?? 0).replace(".", ",")); }} hitSlop={8}>
+                  <MaterialCommunityIcons name="pencil-outline" size={22} color={accent} />
                 </Pressable>
               ) : null}
               {readOnly ? null : (
@@ -189,6 +219,8 @@ export default function PeopleEditor({
 }
 
 const styles = StyleSheet.create({
+  modalBackdrop: { flex: 1, justifyContent: "center", padding: 24, backgroundColor: "rgba(0,0,0,0.4)" },
+  modalCard: { borderRadius: 20, padding: 24, gap: 16 },
   sectionHeader: {
     flexDirection: "row",
     alignItems: "center",

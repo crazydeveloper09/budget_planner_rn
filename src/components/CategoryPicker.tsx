@@ -8,17 +8,18 @@ import { categoriesFor } from "../helpers/categories";
 
 type CategoryPickerProps = {
   type: TransactionType;
+  recurring?: boolean;
   value: string;
   onChange: (category: string) => void;
 };
 
-export default function CategoryPicker({ type, value, onChange }: CategoryPickerProps) {
+export default function CategoryPicker({ type, value, onChange, recurring = false }: CategoryPickerProps) {
   const { accent, surfaces } = useAccent();
   return (
     <View style={styles.wrap}>
       <Text style={styles.label}>Kategoria</Text>
       <View style={styles.grid}>
-        {categoriesFor(type).map((category) => {
+        {categoriesFor(type).filter(item => !recurring || type !== "income" || !["Premia", "Prezent", "Zwrot"].includes(item.label)).map((category) => {
           const selected = category.label === value;
           return (
             <Pressable

@@ -73,3 +73,9 @@ export async function replaceMembers(userId: number, people: NewMember[]): Promi
   await database.runAsync("DELETE FROM members WHERE user_id = ?", [Number(userId)]);
   return addMembers(userId, people);
 }
+
+export async function updateMemberDailySaldo(userId: number, id: number, amount: number): Promise<void> {
+  if (!Number.isFinite(amount) || amount < 0) throw new Error("Nieprawidłowy dzienny limit");
+  const database = await getDb();
+  await database.runAsync("UPDATE members SET daily_saldo = ? WHERE id = ? AND user_id = ? AND role = 'family'", [Math.round(amount * 100) / 100, Number(id), Number(userId)]);
+}

@@ -65,6 +65,7 @@ export async function uploadLocalReceipts(userId: number) {
     if (!image) continue;
     await uploadReceipt({
       id: receipt.id,
+      standalone: receipt.standalone,
       date: receipt.date,
       name: receipt.name,
       category: receipt.category,
@@ -95,6 +96,7 @@ export async function downloadRemoteReceipts(userId: number, entries: Transactio
       const stored = await writeReceiptBase64(payload.id, payload.image);
       await insertReceipt(userId, {
         id: payload.id,
+        standalone: payload.standalone,
         entryId: null,
         date: payload.date,
         name: payload.name,
@@ -124,6 +126,7 @@ export async function migrateEmbeddedReceipts(
       const stored = await writeReceiptBase64(item.id, item.image);
       await insertReceipt(userId, {
         id: item.id,
+        standalone: item.standalone,
         entryId: null,
         date: item.date,
         name: item.name,

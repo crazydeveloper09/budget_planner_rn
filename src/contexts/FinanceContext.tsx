@@ -1,5 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
-import { NewTransaction, Receipt, Transaction } from "../db/interfaces";
+import { NewReceipt, NewTransaction, Receipt, Transaction } from "../db/interfaces";
 import {
   insertReceipt,
   listReceipts,
@@ -25,6 +25,7 @@ type FinanceContextValue = {
   updateEntry: (id: number, input: NewTransaction) => Promise<void>;
   removeEntry: (id: number) => Promise<void>;
   addReceiptsToEntry: (entry: Transaction, sourceUris: string[]) => Promise<void>;
+  addStandaloneReceipts: (input: Pick<NewReceipt, "date" | "name" | "category" | "amount" | "ownerName">, sourceUris: string[]) => Promise<void>;
   removeReceipt: (id: string) => Promise<void>;
 };
 
@@ -165,6 +166,31 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [attachReceipts, profile, pushBudget]
   );
 
+  const addStandaloneReceipts = useCallback(
+    async (input: Pick<NewReceipt, "date" | "name" | "category" | "amount" | "ownerName">, sourceUris: string[]) => {
+      if (!profile) return;
+      for (const sourceUri of sourceUris) {
+        const stored = await persistReceiptFromPicker(sourceUri);
+        await insertReceipt(profile.id, {
+          ...input,
+          id: stored.id,
+          entryId: null,
+          standalone: true,
+          createdAt: new Date().toISOString(),
+          uri: stored.uri,
+          fileName: stored.fileName,
+        });
+      }
+      setReceipts(await listReceipts(profile.id));
+      try {
+        await pushBudget();
+      } catch {
+        // Saved locally; synchronization retries later.
+      }
+    },
+    [profile, pushBudget]
+  );
+
   const removeReceipt = useCallback(
     async (id: string) => {
       await deleteReceiptRow(id);
@@ -179,8 +205,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   );
 
   const value = useMemo(
-    () => ({ entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt }),
-    [entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt]
+    () => ({ entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt }),
+    [entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt]
   );
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

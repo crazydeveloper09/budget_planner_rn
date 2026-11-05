@@ -4,7 +4,7 @@ import { sha256 } from "@noble/hashes/sha256";
 import { getRandomBytes } from "expo-crypto";
 import { bytesToHex, hexToBytes, utf8Bytes, utf8String } from "./bytes";
 import { CloudEntry, E2eEnvelope, E2eWrap } from "../api/types";
-import { AccountType, ChatPlan } from "../db/interfaces";
+import { AccountType, ChatPlan, WalletAdjustment } from "../db/interfaces";
 
 const PBKDF2_ITERS = 120_000;
 
@@ -17,6 +17,7 @@ export type BudgetPlaintext = {
     walletSetOn?: string | null;
     walletAfterId?: number;
     walletRecurringMonth?: string | null;
+    walletHistory?: WalletAdjustment[];
   };
   people: Array<{
     name: string;
@@ -37,6 +38,8 @@ export type BudgetPlaintext = {
     }>;
   };
   goals?: Array<{
+    priority?: number;
+    category?: string;
     id: string;
     title: string;
     targetAmount: number;
@@ -57,6 +60,7 @@ export type BudgetPlaintext = {
 };
 
 export type ReceiptPlaintext = {
+  standalone?: boolean;
   id: string;
   date: string;
   name: string;

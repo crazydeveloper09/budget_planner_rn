@@ -370,7 +370,7 @@ const styles = StyleSheet.create({
   },
   content: {
     padding: 20,
-    paddingBottom: 16,
+    paddingBottom: 140,
   },
   title: {
     fontFamily: "MontserratSemiBold",

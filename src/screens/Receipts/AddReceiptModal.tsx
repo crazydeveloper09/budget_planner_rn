@@ -1,3 +1,4 @@
+import { useBudgetGuard } from "../../components/useBudgetGuard";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -21,7 +22,8 @@ import { useProfile } from "../../contexts/ProfileContext";
 import { useAccent } from "../../contexts/ThemeContext";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
-import { confirmIfOverBudget, remainingAfterDay } from "../../helpers/wallet";
+import { remainingAfterDay } from "../../helpers/wallet";
+import { ownerLabel } from "../../helpers/owners";
 
 type AddReceiptModalProps = {
   visible: boolean;
@@ -39,12 +41,14 @@ function formatDay(iso: string) {
 
 const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) => {
   const { accent, surfaces } = useAccent();
+  const { confirmIfOverBudget, budgetGuardModal } = useBudgetGuard();
   const { profile, members } = useProfile();
-  const { entries, addEntry, addReceiptsToEntry } = useFinance();
-  const leftover = remainingAfterDay(profile, entries, date);
+  const { entries, addEntry, addReceiptsToEntry, addStandaloneReceipts } = useFinance();
+  const [standalone, setStandalone] = useState(false);
   const isFamily = profile?.accountType === "family";
   const [uris, setUris] = useState<string[]>([]);
   const [date, setDate] = useState(toIsoDate(new Date()));
+  const leftover = remainingAfterDay(profile, entries, date);
   const [dateOpen, setDateOpen] = useState(false);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -60,6 +64,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
   );
 
   const reset = () => {
+    setStandalone(false);
     setUris([]);
     setDate(toIsoDate(new Date()));
     setName("");
@@ -77,13 +82,24 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
 
   const canSave =
     uris.length > 0 &&
-    (linkId !== null || (Boolean(category) && parseAmount(amount) !== null));
+    ((!standalone && linkId !== null) || (Boolean(category) && parseAmount(amount) !== null));
 
   const save = async () => {
     if (!canSave || saving) return;
     setSaving(true);
     try {
-      if (linkId !== null) {
+      if (standalone) {
+        const parsed = parseAmount(amount);
+        if (!category || parsed === null) return;
+        const owner = ownerLabel(memberId, members);
+        await addStandaloneReceipts({
+          date,
+          name: name.trim(),
+          category,
+          amount: parsed,
+          ownerName: owner === "Wspólny" ? null : owner,
+        }, uris);
+      } else if (linkId !== null) {
         const entry = dayExpenses.find((item) => item.id === linkId);
         if (!entry) {
           Alert.alert("Wydatek", "Wybierz wydatek z listy albo dodaj nowy.");
@@ -94,6 +110,10 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
         const parsed = parseAmount(amount);
         if (!category || parsed === null) return;
         const ok = await confirmIfOverBudget({
+          title: name.trim() || category,
+          category,
+          date,
+          onReschedule: setDate,
           remaining: leftover,
           amount: parsed,
           isExpense: true,
@@ -137,6 +157,28 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
           keyboardDismissMode="interactive"
         >
           <ReceiptAttach uris={uris} onChange={setUris} />
+          <Text style={styles.fieldLabel}>Sposób zapisu</Text>
+          {[
+            { value: false, label: "W planie wydatków" },
+            { value: true, label: "Poza planem wydatków" },
+          ].map((option) => (
+            <Pressable
+              key={String(option.value)}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: standalone === option.value }}
+              onPress={() => { setStandalone(option.value); setLinkId(null); }}
+              style={[
+                styles.linkChip,
+                { borderColor: surfaces.border },
+                standalone === option.value && { borderColor: accent, backgroundColor: surfaces.surfaceStrong },
+              ]}
+            >
+              <Text style={[styles.linkChipText, standalone === option.value && { color: accent }]}>
+                {option.label}
+              </Text>
+            </Pressable>
+          ))}
+          {standalone ? <Text style={styles.fieldLabel}>Paragon zostanie zapisany bez dodawania wydatku i zmiany budżetu.</Text> : null}
           <Text style={styles.fieldLabel}>Data</Text>
           <Pressable
             onPress={() => setDateOpen(true)}
@@ -146,7 +188,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
             <Text style={styles.dateBtnText}>{formatDay(date)}</Text>
           </Pressable>
 
-          {dayExpenses.length > 0 ? (
+          {!standalone && dayExpenses.length > 0 ? (
             <View style={styles.linkBlock}>
               <Text style={styles.fieldLabel}>Powiąż z wydatkiem z tego dnia</Text>
               <Pressable
@@ -180,7 +222,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
             </View>
           ) : null}
 
-          {linkId === null ? (
+          {standalone || linkId === null ? (
             <>
               {isFamily ? (
                 <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
@@ -234,7 +276,8 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
           confirmTextIOS="Wybierz"
           cancelTextIOS="Anuluj"
         />
-      </KeyboardAvoidingView>
+      {budgetGuardModal}
+    </KeyboardAvoidingView>
       </SafeAreaView>
     </Modal>
   );

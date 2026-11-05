@@ -6,6 +6,7 @@ type ReceiptRow = {
   id: string;
   user_id: number;
   entry_id: number | null;
+  standalone: number;
   entry_date: string;
   title: string;
   category: string;
@@ -18,6 +19,7 @@ type ReceiptRow = {
 function mapReceipt(row: ReceiptRow): Receipt {
   return {
     id: row.id,
+    standalone: Boolean(row.standalone),
     userId: row.user_id,
     entryId: row.entry_id ? Number(row.entry_id) : null,
     date: row.entry_date,
@@ -53,7 +55,7 @@ function matchMap(entries: Transaction[]) {
 export async function listReceipts(userId: number): Promise<Receipt[]> {
   const database = await getDb();
   const rows = await database.getAllAsync<ReceiptRow>(
-    `SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name
+    `SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name, standalone
      FROM receipts WHERE user_id = ? ORDER BY created_at DESC`,
     [Number(userId)]
   );
@@ -63,7 +65,7 @@ export async function listReceipts(userId: number): Promise<Receipt[]> {
 export async function getReceipt(id: string): Promise<Receipt | null> {
   const database = await getDb();
   const row = await database.getFirstAsync<ReceiptRow>(
-    `SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name
+    `SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name, standalone
      FROM receipts WHERE id = ?`,
     [id]
   );
@@ -73,8 +75,8 @@ export async function getReceipt(id: string): Promise<Receipt | null> {
 export async function insertReceipt(userId: number, input: NewReceipt): Promise<Receipt> {
   const database = await getDb();
   await database.runAsync(
-    `INSERT OR REPLACE INTO receipts (id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    `INSERT OR REPLACE INTO receipts (id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name, standalone)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       input.id,
       Number(userId),
@@ -86,6 +88,7 @@ export async function insertReceipt(userId: number, input: NewReceipt): Promise<
       input.ownerName,
       input.createdAt,
       input.fileName,
+      input.standalone ? 1 : 0,
     ]
   );
   return { ...input, userId: Number(userId) };
@@ -96,6 +99,7 @@ export async function rematchReceipts(userId: number, entries: Transaction[]): P
   const items = await listReceipts(userId);
   const database = await getDb();
   for (const item of items) {
+    if (item.standalone) continue;
     const key = receiptMatchKey(item);
     const ids = unused.get(key) ?? [];
     const entryId = ids.shift() ?? null;
@@ -123,7 +127,7 @@ export async function clearReceiptTombstone(id: string): Promise<void> {
 export async function removeReceipt(id: string, options?: { tombstone?: boolean }): Promise<void> {
   const database = await getDb();
   const row = await database.getFirstAsync<ReceiptRow>(
-    "SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name FROM receipts WHERE id = ?",
+    "SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name, standalone FROM receipts WHERE id = ?",
     [id]
   );
   await database.runAsync("DELETE FROM receipts WHERE id = ?", [id]);
@@ -153,7 +157,7 @@ export async function updateReceiptsForEntry(
 export async function removeReceiptsForEntry(entryId: number): Promise<void> {
   const database = await getDb();
   const rows = await database.getAllAsync<ReceiptRow>(
-    "SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name FROM receipts WHERE entry_id = ?",
+    "SELECT id, user_id, entry_id, entry_date, title, category, amount, owner_name, created_at, file_name, standalone FROM receipts WHERE entry_id = ?",
     [Number(entryId)]
   );
   await database.runAsync("DELETE FROM receipts WHERE entry_id = ?", [Number(entryId)]);
@@ -173,7 +177,7 @@ export async function replaceReceipts(
   for (const item of items) {
     const key = receiptMatchKey(item);
     const ids = unused.get(key) ?? [];
-    const entryId = ids.shift() ?? item.entryId ?? null;
+    const entryId = item.standalone ? null : ids.shift() ?? item.entryId ?? null;
     unused.set(key, ids);
     created.push(
       await insertReceipt(userId, {
