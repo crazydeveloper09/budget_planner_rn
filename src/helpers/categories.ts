@@ -16,6 +16,7 @@ export const EXPENSE_CATEGORIES: CategoryOption[] = [
   { label: "Zakupy", icon: "shopping-outline", tint: "#7D9D7A" },
   { label: "Edukacja", icon: "school-outline", tint: "#5B8A9A" },
   { label: "Ubrania", icon: "tshirt-crew-outline", tint: "#C97BA8" },
+  { label: "Kredyty i pożyczki", icon: "bank-outline", tint: "#6E75A8" },
   { label: "Inne", icon: "dots-horizontal-circle-outline", tint: "#8A7A88" },
 ];
 

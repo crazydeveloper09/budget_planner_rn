@@ -14,16 +14,28 @@ type CategoryPickerProps = {
 };
 
 export default function CategoryPicker({ type, value, onChange, recurring = false }: CategoryPickerProps) {
+  const categories = categoriesFor(type).filter(item => !recurring || type !== "income" || !["Premia", "Prezent", "Zwrot"].includes(item.label));
+  return <CategoryTiles categories={categories} value={value} onChange={onChange} />;
+}
+
+export function CategoryTiles({ categories, value, onChange, label = "Kategoria" }: {
+  categories: readonly { label: string; icon: React.ComponentProps<typeof MaterialCommunityIcons>["name"] }[];
+  value: string;
+  onChange: (category: string) => void;
+  label?: string;
+}) {
   const { accent, surfaces } = useAccent();
   return (
     <View style={styles.wrap}>
-      <Text style={styles.label}>Kategoria</Text>
+      <Text style={styles.label}>{label}</Text>
       <View style={styles.grid}>
-        {categoriesFor(type).filter(item => !recurring || type !== "income" || !["Premia", "Prezent", "Zwrot"].includes(item.label)).map((category) => {
+        {categories.map((category) => {
           const selected = category.label === value;
           return (
             <Pressable
               key={category.label}
+              accessibilityRole="radio"
+              accessibilityState={{ checked: selected }}
               onPress={() => onChange(category.label)}
               style={[
                 styles.card,

@@ -2,7 +2,7 @@ import * as SQLite from "expo-sqlite";
 
 const DB_NAME = "budget_planner.db";
 
-type Database = SQLite.SQLiteDatabase;
+export type Database = SQLite.SQLiteDatabase;
 
 let db: Database | null = null;
 let opening: Promise<Database> | null = null;
@@ -177,6 +177,13 @@ async function migrate(database: Database) {
       id TEXT PRIMARY KEY
     );
 
+    CREATE TABLE IF NOT EXISTS loans (
+      user_id INTEGER NOT NULL,
+      id TEXT NOT NULL,
+      data TEXT NOT NULL,
+      PRIMARY KEY (user_id, id)
+    );
+
     CREATE TABLE IF NOT EXISTS goals (
       id TEXT PRIMARY KEY,
       user_id INTEGER NOT NULL,
@@ -198,6 +205,13 @@ async function migrate(database: Database) {
   if (!receiptColumns.some((column) => column.name === "standalone")) {
     await database.execAsync("ALTER TABLE receipts ADD COLUMN standalone INTEGER NOT NULL DEFAULT 0");
   }
+  if (!receiptColumns.some((column) => column.name === "sync_version")) {
+    await database.execAsync("ALTER TABLE receipts ADD COLUMN sync_version TEXT");
+  }
+  if (!entryColumns.some((column) => column.name === "loan_payment_key")) {
+    await database.execAsync("ALTER TABLE entries ADD COLUMN loan_payment_key TEXT");
+  }
+  await database.execAsync("CREATE UNIQUE INDEX IF NOT EXISTS loan_payment_entry ON entries (user_id, loan_payment_key)");
 }
 
 export async function initDb() {

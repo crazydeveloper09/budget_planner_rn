@@ -8,6 +8,7 @@ import { listGoals, mergeGoals } from "../db/goals";
 import { listMembers, replaceMembers } from "../db/members";
 import { createProfile, getProfile, setCloudProfileId, updateProfile } from "../db/profile";
 import { listTransactions, replaceAllTransactions } from "../db/transactions";
+import { readLoanLedger, replaceLoans } from "../db/loans";
 import { currentWallet } from "../helpers/wallet";
 import { ownerLabel } from "../helpers/owners";
 import { downloadRemoteReceipts, migrateEmbeddedReceipts, uploadLocalReceipts } from "./receipts";
@@ -44,6 +45,7 @@ function toCloudEntries(entries: Transaction[], people: Member[]): CloudEntry[] 
       category: entry.category,
       amount: entry.amount,
       regular: entry.regular,
+      loanPaymentKey: entry.loanPaymentKey,
       ownerName: label === "Wspólny" ? null : label,
     };
   });
@@ -55,7 +57,7 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
   const revision = await markBudgetPending(profile.id);
   if (!(await hasInternet())) return null;
   const people = await listMembers(profile.id);
-  const entries = await listTransactions(profile.id);
+  const { entries, loans } = await readLoanLedger(profile.id);
   const topics = await listChatTopics(profile.id);
   const messages = await listChatMessages(profile.id);
   const goals = await listGoals(profile.id);
@@ -79,6 +81,7 @@ export async function pushSqliteBudget(): Promise<SnapshotResponse | null> {
       salary: person.salary,
     })),
     entries: toCloudEntries(entries, people),
+    loans,
     goals: goals.map((goal) => ({
       id: goal.id,
       title: goal.title,
@@ -149,6 +152,7 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
     chat?: BudgetPlaintext["chat"];
     receipts?: BudgetPlaintext["receipts"];
     goals?: BudgetPlaintext["goals"];
+    loans?: BudgetPlaintext["loans"];
   } = {
     household: data.household,
     people: data.people ?? [],
@@ -189,6 +193,7 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
       chat: plain.chat,
       receipts: plain.receipts,
       goals: plain.goals,
+      loans: plain.loans,
     };
   }
 
@@ -250,9 +255,14 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
     category: item.category,
     amount: item.amount,
     regular: item.regular,
+    loanPaymentKey: item.loanPaymentKey,
     memberId: item.ownerName ? idsByName[item.ownerName] ?? null : null,
   }));
-  await replaceAllTransactions(profile.id, nextEntries);
+  const profileId = profile.id;
+  const loans = snapshot.loans;
+  await replaceAllTransactions(profileId, nextEntries, loans
+    ? (db) => replaceLoans(profileId, loans, db)
+    : undefined);
   const storedEntries = await listTransactions(profile.id);
   // Imported transactions receive new SQLite IDs; re-anchor the cloud wallet locally.
   if (snapshot.household.walletBaselineCount != null) {

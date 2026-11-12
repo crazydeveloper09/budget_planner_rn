@@ -27,6 +27,7 @@ const deps = {
   '../crypto/keystore': { requireDek: async () => [], loadDek: async () => [] },
   '../db/profile': { getProfile: async () => profile, updateProfile: async (_, input) => (profile = { ...profile, ...input }), setCloudProfileId: async () => {} },
   '../db/transactions': { listTransactions: async () => entries, replaceAllTransactions: async (_, items) => { imports++; entries = items.map(item => ({ ...item, id: nextId++ })); } },
+  '../db/loans': { readLoanLedger: async () => ({ entries, loans: [] }), replaceLoans: async () => {} },
   '../db/members': { listMembers: async () => [], replaceMembers: async () => [] },
   '../db/goals': { listGoals: async () => [], mergeGoals: async () => {} },
   '../db/chat': { listChatTopics: async () => [], listChatMessages: async () => [], mergeChat: async () => {} },

@@ -3,6 +3,7 @@ import { View, StyleSheet } from "react-native";
 import { useAccent } from "../contexts/ThemeContext";
 import SettingsIndexScreen from "../screens/Settings/Index";
 import PrivacyScreen from "../screens/Settings/Privacy";
+import { roundedScreenLayout } from "./RoundedScreen";
 import { getStackScreenOptions } from "./stackOptions";
 
 const Stack = createNativeStackNavigator();
@@ -11,7 +12,7 @@ const SettingsNavigator = () => {
   const { accent } = useAccent();
   return (
     <View style={styles.root}>
-      <Stack.Navigator screenOptions={getStackScreenOptions(accent)}>
+      <Stack.Navigator screenLayout={roundedScreenLayout} screenOptions={getStackScreenOptions(accent)}>
         <Stack.Screen
           name="Settings Index"
           component={SettingsIndexScreen}

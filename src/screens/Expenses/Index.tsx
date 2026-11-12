@@ -6,6 +6,7 @@ import React, { useCallback, useMemo, useState } from "react";
 import {
   Alert,
   Image,
+  Modal,
   KeyboardAvoidingView,
   Platform,
   Pressable,
@@ -13,8 +14,9 @@ import {
   StyleSheet,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import CalendarPicker from "react-native-calendar-picker";
-import { Button, Text, TextInput } from "react-native-paper";
+import { Button, IconButton, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { months, weekdays } from "../../../defaultData";
 import { useFinance } from "../../contexts/FinanceContext";
@@ -114,17 +116,17 @@ const DayEntryRow: React.FC<DayEntryRowProps> = ({
         {isExpense ? "−" : "+"}
         {formatPln(item.amount)}
       </Text>
-      <Pressable onPress={() => onEdit(item)} hitSlop={8}>
+      {!item.loanPaymentKey ? <Pressable onPress={() => onEdit(item)} hitSlop={8}>
         <MaterialCommunityIcons name="pencil-outline" size={22} color={accent} />
-      </Pressable>
+      </Pressable> : null}
       {isExpense ? (
         <Pressable onPress={() => onAddReceipt(item)} hitSlop={8}>
           <MaterialCommunityIcons name="camera-plus-outline" size={22} color={accent} />
         </Pressable>
       ) : null}
-      <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
+      {!item.loanPaymentKey ? <Pressable onPress={() => onRemove(item.id)} hitSlop={8}>
         <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
-      </Pressable>
+      </Pressable> : null}
     </View>
   );
 };
@@ -139,6 +141,7 @@ const ExpensesIndexScreen: React.FC = () => {
   const { entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, removeReceipt } = useFinance();
   const [selectedStartDate, setSelectedStartDate] = useState<Date>(new Date());
   const [formType, setFormType] = useState<TransactionType | null>(null);
+  const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
@@ -195,18 +198,19 @@ const ExpensesIndexScreen: React.FC = () => {
 
   const saveEntry = async () => {
     const parsed = parseAmount(amount);
-    if (!formType || !category || parsed === null) return;
-    const ok = await confirmIfOverBudget({
-      title: name.trim() || category,
-      category,
-      date: selectedIso,
-      onReschedule: (value) => setSelectedStartDate(parsePickedDate(value)),
-      remaining: leftover,
-      amount: parsed,
-      isExpense: formType === "expense",
-    });
-    if (!ok) return;
+    if (saving || !formType || !category || parsed === null) return;
+    setSaving(true);
     try {
+      const ok = await confirmIfOverBudget({
+        title: name.trim() || category,
+        category,
+        date: selectedIso,
+        onReschedule: (value) => setSelectedStartDate(parsePickedDate(value)),
+        remaining: leftover,
+        amount: parsed,
+        isExpense: formType === "expense",
+      });
+      if (!ok) return;
       await addEntry(
         {
           date: selectedIso,
@@ -223,12 +227,13 @@ const ExpensesIndexScreen: React.FC = () => {
     } catch (error) {
       console.error(error);
       Alert.alert("Nie udało się zapisać", "Spróbuj zapisać jeszcze raz.");
+    } finally {
+      setSaving(false);
     }
   };
 
   const selectFormType = (type: TransactionType) => {
-    setFormType((current) => (current === type ? null : type));
-    setCategory("");
+    setFormType(type);
   };
 
   return (
@@ -279,52 +284,6 @@ const ExpensesIndexScreen: React.FC = () => {
           <Text style={[styles.actionLabel, { color: accent }]}>Wpływ</Text>
         </Pressable>
       </View>
-
-      {formType ? (
-        <View style={styles.form}>
-          <Text style={styles.formTitle}>
-            {formType === "expense" ? "Nowy wydatek" : "Nowy wpływ"}
-          </Text>
-          {isFamily ? (
-            <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
-          ) : null}
-          <TextInput
-            mode="outlined"
-            label="Kwota"
-            placeholder="np. 45"
-            value={amount}
-            onChangeText={setAmount}
-            keyboardType="decimal-pad"
-            style={styles.input}
-            outlineColor="#d7c8d3"
-            activeOutlineColor={accent}
-          />
-          <TextInput
-            mode="outlined"
-            label="Nazwa (opcjonalnie)"
-            placeholder={formType === "expense" ? "np. Lidl" : "np. Premia za kwartał"}
-            value={name}
-            onChangeText={setName}
-            style={styles.input}
-            outlineColor="#d7c8d3"
-            activeOutlineColor={accent}
-          />
-          <CategoryPicker type={formType} value={category} onChange={setCategory} />
-          {formType === "expense" ? (
-            <ReceiptAttach uris={pendingReceipts} onChange={setPendingReceipts} />
-          ) : null}
-          <Button
-            mode="contained"
-            onPress={saveEntry}
-            disabled={!canSave}
-            buttonColor={accent}
-            textColor="#fff"
-            style={styles.saveButton}
-          >
-            Zapisz
-          </Button>
-        </View>
-      ) : null}
 
       <View style={styles.summaryContainer}>
         <View style={styles.dayHeadingRow}><Text style={styles.dayHeading}>{formatDayHeading(selectedStartDate, isToday)}</Text><Pressable accessibilityRole="button" accessibilityLabel="Dzienny limit i oszczędności" onPress={() => navigation.dispatch(CommonActions.navigate({ name: "User", params: { screen: "DailyBudget" } }))} style={styles.dailyLink}><MaterialCommunityIcons name="piggy-bank-outline" size={25} color="#111" /></Pressable></View>
@@ -419,6 +378,69 @@ const ExpensesIndexScreen: React.FC = () => {
         )}
       </View>
     </ScrollView>
+    <Modal visible={formType !== null} transparent animationType="fade" statusBarTranslucent onRequestClose={() => { if (!saving) resetForm(); }}>
+      <SafeAreaView style={styles.formOverlay}>
+        <KeyboardAvoidingView style={styles.formCenter} behavior={Platform.OS === "ios" ? "padding" : undefined}>
+          {formType ? (
+            <View accessibilityViewIsModal style={styles.formDialog}>
+              <View style={styles.formHeader}>
+                <Text style={styles.formTitle}>
+                  {formType === "expense" ? "Nowy wydatek" : "Nowy wpływ"}
+                </Text>
+                <IconButton icon="close" size={25} accessibilityLabel="Zamknij" disabled={saving} onPress={resetForm} />
+              </View>
+              <ScrollView style={styles.formScroll} contentContainerStyle={styles.form} keyboardShouldPersistTaps="handled">
+                {isFamily ? (
+                  <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
+                ) : null}
+                <TextInput
+                  mode="outlined"
+                  label="Kwota"
+                  placeholder="np. 45"
+                  value={amount}
+                  onChangeText={setAmount}
+                  keyboardType="decimal-pad"
+                  style={styles.input}
+                  outlineColor="#d7c8d3"
+                  activeOutlineColor={accent}
+                />
+                <TextInput
+                  mode="outlined"
+                  label="Nazwa (opcjonalnie)"
+                  placeholder={formType === "expense" ? "np. Lidl" : "np. Premia za kwartał"}
+                  value={name}
+                  onChangeText={setName}
+                  style={styles.input}
+                  outlineColor="#d7c8d3"
+                  activeOutlineColor={accent}
+                />
+                <CategoryPicker type={formType} value={category} onChange={setCategory} />
+                {formType === "expense" ? (
+                  <ReceiptAttach uris={pendingReceipts} onChange={setPendingReceipts} />
+                ) : null}
+              </ScrollView>
+              <View style={[styles.formActions, { borderTopColor: surfaces.border }]}>
+                <Button mode="outlined" style={[styles.formButton, { borderColor: surfaces.border }]} contentStyle={styles.formButtonContent} onPress={resetForm} disabled={saving} textColor={accent}>Anuluj</Button>
+                <Button
+                  mode="contained"
+                  icon="check"
+                  onPress={saveEntry}
+                  disabled={!canSave || saving}
+                  loading={saving}
+                  buttonColor={accent}
+                  textColor="#fff"
+                  style={styles.formButton}
+                  contentStyle={styles.formButtonContent}
+                >
+                  Zapisz
+                </Button>
+              </View>
+            </View>
+          ) : null}
+        </KeyboardAvoidingView>
+        {budgetGuardModal}
+      </SafeAreaView>
+    </Modal>
     <EditEntryModal
       entry={editing}
       showOwnerPicker={isFamily}
@@ -446,7 +468,6 @@ const ExpensesIndexScreen: React.FC = () => {
         ]);
       }}
     />
-    {budgetGuardModal}
     </KeyboardAvoidingView>
   );
 };
@@ -484,22 +505,24 @@ const styles = StyleSheet.create({
     fontFamily: "MontserratSemiBold",
     fontSize: 15,
   },
-  form: {
-    marginTop: 14,
-  },
+  formOverlay: { flex: 1, backgroundColor: "rgba(26,12,31,0.58)" },
+  formCenter: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 14, paddingVertical: 12 },
+  formDialog: { width: "100%", maxWidth: 500, maxHeight: "100%", backgroundColor: "#fff", borderRadius: 26, elevation: 16, shadowColor: "#1c1024", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.24, shadowRadius: 30 },
+  formHeader: { flexDirection: "row", alignItems: "center", paddingLeft: 18, paddingRight: 4, paddingTop: 4 },
+  formScroll: { flexGrow: 0, flexShrink: 1 },
+  form: { paddingHorizontal: 18, paddingBottom: 14 },
+  formActions: { flexDirection: "row", gap: 10, borderTopWidth: 1, padding: 14 },
+  formButton: { flex: 1, borderRadius: 13 },
+  formButtonContent: { minHeight: 46 },
   formTitle: {
+    flex: 1,
     fontFamily: "MontserratSemiBold",
-    fontSize: 16,
-    marginBottom: 10,
+    fontSize: 23,
     color: "#1f1220",
   },
   input: {
     backgroundColor: "#fff",
     marginBottom: 10,
-  },
-  saveButton: {
-    borderRadius: 12,
-    marginTop: 4,
   },
   summaryContainer: {
     paddingVertical: 20,

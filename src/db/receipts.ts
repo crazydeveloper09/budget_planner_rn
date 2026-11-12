@@ -2,6 +2,42 @@ import { NewReceipt, Receipt, Transaction } from "./interfaces";
 import { getDb } from "./init";
 import { deleteReceiptFile, receiptUri } from "../helpers/receiptFiles";
 
+export type ReceiptDetails = Pick<Receipt, "date" | "name" | "category" | "amount" | "ownerName">;
+
+export async function receiptSyncVersions(userId: number) {
+  const database = await getDb();
+  const rows = await database.getAllAsync<{ id: string; sync_version: string | null }>(
+    "SELECT id, sync_version FROM receipts WHERE user_id = ?", [userId]
+  );
+  return new Map(rows.map((row) => [row.id, row.sync_version]));
+}
+
+export async function markReceiptSynced(id: string, previous: string | null, version: string | null) {
+  const database = await getDb();
+  await database.runAsync("UPDATE receipts SET sync_version = ? WHERE id = ? AND sync_version IS ?", [version, id, previous]);
+}
+
+export async function applyReceiptDetails(id: string, previous: string | null, version: string, input: ReceiptDetails & { standalone?: boolean }) {
+  const database = await getDb();
+  await database.runAsync(
+    "UPDATE receipts SET entry_date = ?, title = ?, category = ?, amount = ?, owner_name = ?, standalone = ?, sync_version = ? WHERE id = ? AND sync_version IS ?",
+    [input.date, input.name, input.category, input.amount, input.ownerName, input.standalone ? 1 : 0, version, id, previous]
+  );
+}
+
+export async function updateReceiptDetails(userId: number, id: string, input: ReceiptDetails) {
+  const database = await getDb();
+  const result = await database.runAsync(
+    "UPDATE receipts SET entry_date = ?, title = ?, category = ?, amount = ?, owner_name = ?, standalone = 1, sync_version = ? WHERE id = ? AND user_id = ? AND entry_id IS NULL",
+    [input.date, input.name, input.category, input.amount, input.ownerName, pendingReceiptVersion(), id, userId]
+  );
+  if (!result.changes) throw new Error("Receipt is no longer editable");
+}
+
+function pendingReceiptVersion() {
+  return `pending:${Date.now()}:${Math.random()}`;
+}
+
 type ReceiptRow = {
   id: string;
   user_id: number;
@@ -95,15 +131,19 @@ export async function insertReceipt(userId: number, input: NewReceipt): Promise<
 }
 
 export async function rematchReceipts(userId: number, entries: Transaction[]): Promise<void> {
-  const unused = matchMap(entries);
+  const matches = matchMap(entries);
   const items = await listReceipts(userId);
   const database = await getDb();
+  const assigned = new Set(items.filter((item) =>
+    !item.standalone && item.entryId !== null && matches.get(receiptMatchKey(item))?.includes(item.entryId)
+  ).map((item) => item.entryId));
   for (const item of items) {
     if (item.standalone) continue;
-    const key = receiptMatchKey(item);
-    const ids = unused.get(key) ?? [];
-    const entryId = ids.shift() ?? null;
-    unused.set(key, ids);
+    const ids = matches.get(receiptMatchKey(item)) ?? [];
+    if (item.entryId !== null && ids.includes(item.entryId)) continue;
+    const entryId = ids.find((id) => !assigned.has(id)) ?? (ids.length === 1 ? ids[0] : null);
+    if (entryId === item.entryId) continue;
+    if (entryId !== null) assigned.add(entryId);
     await database.runAsync("UPDATE receipts SET entry_id = ? WHERE id = ?", [entryId, item.id]);
   }
 }
@@ -148,9 +188,9 @@ export async function updateReceiptsForEntry(
   const database = await getDb();
   await database.runAsync(
     `UPDATE receipts
-     SET entry_date = ?, title = ?, category = ?, amount = ?, owner_name = ?
+     SET entry_date = ?, title = ?, category = ?, amount = ?, owner_name = ?, sync_version = ?
      WHERE entry_id = ?`,
-    [input.date, input.name, input.category, input.amount, input.ownerName, Number(entryId)]
+    [input.date, input.name, input.category, input.amount, input.ownerName, pendingReceiptVersion(), Number(entryId)]
   );
 }
 

@@ -1,6 +1,7 @@
 import { useBudgetGuard } from "./useBudgetGuard";
 import React, { useEffect, useState } from "react";
 import {
+  Alert,
   KeyboardAvoidingView,
   Modal,
   Platform,
@@ -111,6 +112,9 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
         memberId,
       });
       onClose();
+    } catch (error) {
+      console.error(error);
+      Alert.alert("Nie udało się zapisać", "Spróbuj ponownie.");
     } finally {
       setSaving(false);
     }

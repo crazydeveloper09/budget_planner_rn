@@ -3,6 +3,8 @@ import { EXPENSE_CATEGORIES, getCategoryOption } from "./categories";
 import { formatPln } from "./money";
 import { SHARED_OWNER_ID } from "./owners";
 import { shiftMonth } from "./monthKey";
+import { parsePickedDate, toIsoDate } from "./dates";
+import { recurringDate, recurringPostingKey } from "./spendingPlan";
 
 export type StatPerson = {
   id: number;
@@ -108,8 +110,8 @@ export function buildFamilyMonthStats(
   monthKey: string
 ): FamilyMonthStats {
   const people = peopleFrom(members);
-  const monthEntries = entries.filter((entry) => inMonth(entry, monthKey));
-  const prevEntries = entries.filter((entry) => inMonth(entry, shiftMonth(monthKey, -1)));
+  const monthEntries = entriesInMonth(entries, monthKey);
+  const prevEntries = entriesInMonth(entries, shiftMonth(monthKey, -1));
   const now = personTotals(monthEntries, people);
   const prev = personTotals(prevEntries, people);
   const prevById = Object.fromEntries(prev.map((row) => [row.person.id, row]));
@@ -247,5 +249,12 @@ export function spendByCategory(entries: Transaction[]): {
 }
 
 export function entriesInMonth(entries: Transaction[], monthKey: string): Transaction[] {
-  return entries.filter((entry) => inMonth(entry, monthKey));
+  const monthly = entries.filter((entry) => inMonth(entry, monthKey));
+  const posted = new Set(monthly.filter((entry) => !entry.regular).map((entry) => recurringPostingKey(entry)));
+  const month = parsePickedDate(`${monthKey}-01`);
+  return monthly.filter((entry) => {
+    if (!entry.regular) return true;
+    const date = toIsoDate(recurringDate(entry, month));
+    return !posted.has(recurringPostingKey(entry, date));
+  });
 }

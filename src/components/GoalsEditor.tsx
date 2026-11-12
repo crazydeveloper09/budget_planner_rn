@@ -185,26 +185,30 @@ export default function GoalsEditor({
             return (
               <View key={item.id} style={[styles.row, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}>
                 <View style={styles.rowCopy}>
-                  <View style={styles.goalTitleRow}><MaterialCommunityIcons name={goalCategoryIcon(item.category)} size={21} color={accent} /><Text style={[styles.personName, { flex: 1 }]}>{item.title}</Text>                <View style={styles.rowActions}>
-                {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={"Zobacz plan celu: " + item.title} onPress={() => onOpen(item.id)} style={styles.iconButton}><MaterialCommunityIcons name="clipboard-text-outline" size={22} color={accent} /></Pressable> : null}
-                {readOnly ? null : (
-                  <>
-                    <Pressable
-                      onPress={() => {
-                        Alert.alert("Usunąć cel?", item.title, [
-                          { text: "Anuluj", style: "cancel" },
-                          { text: "Usuń", style: "destructive", onPress: () => onRemove(item.id) },
-                        ]);
-                      }}
-                      style={styles.iconButton}
-                      accessibilityRole="button"
-                      accessibilityLabel={"Usuń cel: " + item.title}
-                    >
-                      <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
-                    </Pressable>
-                  </>
-                )}
-                </View></View>
+                  <View style={styles.goalTitleRow}>
+                    <MaterialCommunityIcons name={goalCategoryIcon(item.category)} size={21} color={accent} />
+                    <Text style={[styles.personName, { flex: 1 }]}>{item.title}</Text>
+                    <View style={styles.rowActions}>
+                      {onOpen ? <Pressable accessibilityRole="button" accessibilityLabel={"Zobacz plan celu: " + item.title} onPress={() => onOpen(item.id)} style={styles.iconButton}><MaterialCommunityIcons name="clipboard-text-outline" size={22} color={accent} /></Pressable> : null}
+                      {readOnly ? null : (
+                        <>
+                          <Pressable
+                            onPress={() => {
+                              Alert.alert("Usunąć cel?", item.title, [
+                                { text: "Anuluj", style: "cancel" },
+                                { text: "Usuń", style: "destructive", onPress: () => onRemove(item.id) },
+                              ]);
+                            }}
+                            style={styles.iconButton}
+                            accessibilityRole="button"
+                            accessibilityLabel={"Usuń cel: " + item.title}
+                          >
+                            <MaterialCommunityIcons name="close-circle" size={22} color="#9a8a96" />
+                          </Pressable>
+                        </>
+                      )}
+                    </View>
+                  </View>
                   <Text style={styles.personMeta}>
                     {formatPln(saved)} z {formatPln(item.targetAmount)}
                     {item.deadline ? ` · do ${formatDeadline(item.deadline)}` : ""}

@@ -24,10 +24,12 @@ import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
 import { remainingAfterDay } from "../../helpers/wallet";
 import { ownerLabel } from "../../helpers/owners";
+import { Receipt } from "../../db/interfaces";
 
 type AddReceiptModalProps = {
   visible: boolean;
   onClose: () => void;
+  receipt?: Receipt;
 };
 
 function formatDay(iso: string) {
@@ -39,21 +41,24 @@ function formatDay(iso: string) {
   });
 }
 
-const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) => {
+const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose, receipt }) => {
   const { accent, surfaces } = useAccent();
   const { confirmIfOverBudget, budgetGuardModal } = useBudgetGuard();
   const { profile, members } = useProfile();
-  const { entries, addEntry, addReceiptsToEntry, addStandaloneReceipts } = useFinance();
-  const [standalone, setStandalone] = useState(false);
+  const { entries, addEntry, addReceiptsToEntry, addStandaloneReceipts, updateReceipt } = useFinance();
+  const [standalone, setStandalone] = useState(true);
   const isFamily = profile?.accountType === "family";
   const [uris, setUris] = useState<string[]>([]);
-  const [date, setDate] = useState(toIsoDate(new Date()));
+  const [date, setDate] = useState(receipt?.date ?? toIsoDate(new Date()));
   const leftover = remainingAfterDay(profile, entries, date);
   const [dateOpen, setDateOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [category, setCategory] = useState("");
-  const [amount, setAmount] = useState("");
-  const [memberId, setMemberId] = useState<number | null>(null);
+  const [name, setName] = useState(receipt?.name ?? "");
+  const [category, setCategory] = useState(receipt?.category ?? "");
+  const [amount, setAmount] = useState(receipt ? String(receipt.amount).replace(".", ",") : "");
+  const [memberId, setMemberId] = useState<number | null>(() =>
+    receipt ? members.find((member) => ownerLabel(member.id, members) === receipt.ownerName)?.id ?? null : null
+  );
+  const [ownerChanged, setOwnerChanged] = useState(false);
   const [linkId, setLinkId] = useState<number | null>(null);
   const [saving, setSaving] = useState(false);
 
@@ -64,13 +69,14 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
   );
 
   const reset = () => {
-    setStandalone(false);
+    setStandalone(true);
     setUris([]);
     setDate(toIsoDate(new Date()));
     setName("");
     setCategory("");
     setAmount("");
     setMemberId(null);
+    setOwnerChanged(false);
     setLinkId(null);
     setDateOpen(false);
   };
@@ -81,7 +87,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
   };
 
   const canSave =
-    uris.length > 0 &&
+    (Boolean(receipt) || uris.length > 0) &&
     ((!standalone && linkId !== null) || (Boolean(category) && parseAmount(amount) !== null));
 
   const save = async () => {
@@ -92,13 +98,15 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
         const parsed = parseAmount(amount);
         if (!category || parsed === null) return;
         const owner = ownerLabel(memberId, members);
-        await addStandaloneReceipts({
+        const details = {
           date,
           name: name.trim(),
           category,
           amount: parsed,
-          ownerName: owner === "Wspólny" ? null : owner,
-        }, uris);
+          ownerName: receipt && !ownerChanged ? receipt.ownerName : owner === "Wspólny" ? null : owner,
+        };
+        if (receipt) await updateReceipt(receipt.id, details);
+        else await addStandaloneReceipts(details, uris);
       } else if (linkId !== null) {
         const entry = dayExpenses.find((item) => item.id === linkId);
         if (!entry) {
@@ -142,12 +150,12 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
   };
 
   return (
-    <Modal visible={visible} animationType="slide" onRequestClose={close}>
+    <Modal visible={visible} animationType="slide" onRequestClose={() => { if (!saving) close(); }}>
       <SafeAreaView style={styles.root} edges={["top", "bottom"]}>
       <KeyboardAvoidingView style={styles.root} behavior={Platform.OS === "ios" ? "padding" : undefined}>
         <View style={styles.head}>
-          <Text style={styles.title}>Nowy paragon</Text>
-          <Pressable onPress={close} hitSlop={8}>
+          <Text style={styles.title}>{receipt ? "Edytuj paragon" : "Nowy paragon"}</Text>
+          <Pressable onPress={close} disabled={saving} hitSlop={8} accessibilityLabel="Zamknij">
             <MaterialCommunityIcons name="close" size={22} color="#6b5f6a" />
           </Pressable>
         </View>
@@ -156,29 +164,33 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="interactive"
         >
-          <ReceiptAttach uris={uris} onChange={setUris} />
-          <Text style={styles.fieldLabel}>Sposób zapisu</Text>
-          {[
-            { value: false, label: "W planie wydatków" },
-            { value: true, label: "Poza planem wydatków" },
-          ].map((option) => (
-            <Pressable
-              key={String(option.value)}
-              accessibilityRole="radio"
-              accessibilityState={{ checked: standalone === option.value }}
-              onPress={() => { setStandalone(option.value); setLinkId(null); }}
-              style={[
-                styles.linkChip,
-                { borderColor: surfaces.border },
-                standalone === option.value && { borderColor: accent, backgroundColor: surfaces.surfaceStrong },
-              ]}
-            >
-              <Text style={[styles.linkChipText, standalone === option.value && { color: accent }]}>
-                {option.label}
-              </Text>
-            </Pressable>
-          ))}
-          {standalone ? <Text style={styles.fieldLabel}>Paragon zostanie zapisany bez dodawania wydatku i zmiany budżetu.</Text> : null}
+          {!receipt ? (
+            <>
+              <ReceiptAttach uris={uris} onChange={setUris} />
+              <Text style={styles.fieldLabel}>Sposób zapisu</Text>
+              {[
+                { value: false, label: "W planie wydatków" },
+                { value: true, label: "Poza planem wydatków" },
+              ].map((option) => (
+                <Pressable
+                  key={String(option.value)}
+                  accessibilityRole="radio"
+                  accessibilityState={{ checked: standalone === option.value }}
+                  onPress={() => { setStandalone(option.value); setLinkId(null); }}
+                  style={[
+                    styles.linkChip,
+                    { borderColor: surfaces.border },
+                    standalone === option.value && { borderColor: accent, backgroundColor: surfaces.surfaceStrong },
+                  ]}
+                >
+                  <Text style={[styles.linkChipText, standalone === option.value && { color: accent }]}>
+                    {option.label}
+                  </Text>
+                </Pressable>
+              ))}
+              {standalone ? <Text style={styles.fieldLabel}>Paragon zostanie zapisany bez dodawania wydatku i zmiany budżetu.</Text> : null}
+            </>
+          ) : null}
           <Text style={styles.fieldLabel}>Data</Text>
           <Pressable
             onPress={() => setDateOpen(true)}
@@ -225,7 +237,7 @@ const AddReceiptModal: React.FC<AddReceiptModalProps> = ({ visible, onClose }) =
           {standalone || linkId === null ? (
             <>
               {isFamily ? (
-                <OwnerPicker members={members} value={memberId} onChange={setMemberId} />
+                <OwnerPicker members={members} value={memberId} onChange={(id) => { setMemberId(id); setOwnerChanged(true); }} />
               ) : null}
               <TextInput
                 mode="outlined"

@@ -8,12 +8,14 @@ export const getStackScreenOptions = (accent: string): NativeStackNavigationOpti
     backgroundColor: accent,
   },
   headerTintColor: "white",
+  headerTitleAlign: "center",
+  headerShadowVisible: false,
   headerTitleStyle: {
     color: "white" as const,
     fontFamily: "MontserratSemiBold",
     fontSize: 19,
   },
   contentStyle: {
-    backgroundColor: "#fff",
+    backgroundColor: accent,
   },
 });

@@ -1,5 +1,5 @@
 import { NewTransaction, Transaction, TransactionType, WalletAdjustment } from "./interfaces";
-import { getDb, withDatabaseTransaction } from "./init";
+import { Database, getDb, withDatabaseTransaction } from "./init";
 import { SHARED_OWNER_ID } from "../helpers/owners";
 import { getRandomBytes } from "expo-crypto";
 import { bytesToHex } from "../crypto/bytes";
@@ -16,6 +16,7 @@ type EntryRow = {
   amount: number;
   is_regular: number;
   member_id: number;
+  loan_payment_key?: string | null;
 };
 
 function mapEntry(row: EntryRow): Transaction {
@@ -29,13 +30,14 @@ function mapEntry(row: EntryRow): Transaction {
     amount: row.amount,
     regular: Boolean(row.is_regular),
     memberId: row.member_id ? row.member_id : null,
+    ...(row.loan_payment_key ? { loanPaymentKey: row.loan_payment_key } : {}),
   };
 }
 
-export async function listTransactions(userId: number): Promise<Transaction[]> {
-  const database = await getDb();
+export async function listTransactions(userId: number, connection?: Database): Promise<Transaction[]> {
+  const database = connection ?? await getDb();
   const rows = await database.getAllAsync<EntryRow>(
-    `SELECT id, user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id
+    `SELECT id, user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id, loan_payment_key
      FROM entries WHERE user_id = ? ORDER BY id DESC`,
     [Number(userId)]
   );
@@ -43,8 +45,8 @@ export async function listTransactions(userId: number): Promise<Transaction[]> {
   return rows.map(mapEntry);
 }
 
-export async function addTransaction(userId: number, input: NewTransaction): Promise<Transaction> {
-  const database = await getDb();
+export async function addTransaction(userId: number, input: NewTransaction, connection?: Database): Promise<Transaction> {
+  const database = connection ?? await getDb();
   const title = String(input.name ?? "").trim();
   const category = String(input.category ?? "").trim();
   const amount = Number(input.amount);
@@ -63,7 +65,13 @@ export async function addTransaction(userId: number, input: NewTransaction): Pro
   };
 
   let result: { lastInsertRowId: number };
-  try {
+  if (connection) {
+    result = await database.runAsync(
+      `INSERT INTO entries (user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      [params.$userId, params.$entryDate, params.$entryKind, title, category, amount, isRegular, memberId]
+    );
+  } else try {
     result = await database.runAsync(
       `INSERT INTO entries (user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id)
        VALUES ($userId, $entryDate, $entryKind, $title, $category, $amount, $isRegular, $memberId)`,
@@ -100,6 +108,7 @@ export async function updateTransaction(id: number, input: NewTransaction, userI
     const entries = rows.map(mapEntry);
     const original = entries.find(entry => entry.id === id);
     if (!original) throw new Error("Nie znaleziono transakcji do edycji.");
+    if (original.loanPaymentKey) throw new Error("Zmień spłatę w harmonogramie zobowiązania.");
     const updated: Transaction = {
       ...original, date: String(input.date), type: input.type,
       name: String(input.name ?? "").trim(), category: String(input.category ?? "").trim(),
@@ -137,11 +146,15 @@ export async function updateTransaction(id: number, input: NewTransaction, userI
 }
 
 export async function removeTransaction(id: number, userId: number): Promise<void> {
-  await withDatabaseTransaction(async (database) => {
+  await withDatabaseTransaction((database) => removeTransactionRow(database, id, userId));
+}
+
+export async function removeTransactionRow(database: Database, id: number, userId: number, fromLoan = false): Promise<void> {
     const rows = await database.getAllAsync<EntryRow>("SELECT * FROM entries WHERE user_id = ?", [Number(userId)]);
     const entries = rows.map(mapEntry);
     const entry = entries.find(item => item.id === id);
     if (!entry) return; // Repeated deletion must never refund twice.
+    if (entry.loanPaymentKey && !fromLoan) throw new Error("Cofnij spłatę w harmonogramie zobowiązania.");
     const profile = await database.getFirstAsync<{
       wallet_balance: number | null; wallet_after_id: number; wallet_set_on: string | null; wallet_history: string;
     }>("SELECT wallet_balance, wallet_after_id, wallet_set_on, wallet_history FROM users WHERE id = ?", [Number(userId)]);
@@ -167,7 +180,6 @@ export async function removeTransaction(id: number, userId: number): Promise<voi
       await database.runAsync("UPDATE users SET wallet_balance = ?, wallet_history = ? WHERE id = ?", [baseline, JSON.stringify(history), Number(userId)]);
     }
     await database.runAsync("DELETE FROM entries WHERE id = ? AND user_id = ?", [Number(id), Number(userId)]);
-  });
 }
 
 export async function replaceRegularTransactions(
@@ -181,10 +193,24 @@ export async function replaceRegularTransactions(
   }
 }
 
-export async function replaceAllTransactions(userId: number, items: NewTransaction[]): Promise<void> {
-  const database = await getDb();
-  await database.runAsync("DELETE FROM entries WHERE user_id = ?", [Number(userId)]);
-  for (const item of items) {
-    await addTransaction(userId, item);
-  }
+export async function replaceAllTransactions(userId: number, items: NewTransaction[], onReplace?: (database: Database) => Promise<void>): Promise<void> {
+  await withDatabaseTransaction(async (database) => {
+    await database.runAsync("DELETE FROM entries WHERE user_id = ?", [Number(userId)]);
+    for (const item of items) {
+      if (item.loanPaymentKey) {
+        await insertLoanExpense(database, userId, item, item.loanPaymentKey);
+      } else {
+        await addTransaction(userId, item, database);
+      }
+    }
+    await onReplace?.(database);
+  });
+}
+
+export async function insertLoanExpense(database: Database, userId: number, entry: NewTransaction, key: string) {
+  await database.runAsync(
+    `INSERT INTO entries (user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id, loan_payment_key)
+     VALUES (?, ?, 'expense', ?, ?, ?, 0, ?, ?) ON CONFLICT (user_id, loan_payment_key) DO NOTHING`,
+    [userId, entry.date, entry.name, entry.category, entry.amount, entry.memberId ?? SHARED_OWNER_ID, key]
+  );
 }

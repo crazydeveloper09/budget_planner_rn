@@ -1,3 +1,4 @@
+import { SCREEN_TOP_RADIUS } from "../../helpers/colors";
 import React, { useMemo, useState } from "react";
 import {
   Alert,
@@ -367,8 +368,8 @@ const styles = StyleSheet.create({
   sheet: {
     flexGrow: 1,
     backgroundColor: "#fff8fb",
-    borderTopLeftRadius: 28,
-    borderTopRightRadius: 28,
+    borderTopLeftRadius: SCREEN_TOP_RADIUS,
+    borderTopRightRadius: SCREEN_TOP_RADIUS,
     paddingHorizontal: 20,
     paddingTop: 22,
     paddingBottom: 36,

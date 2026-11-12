@@ -70,3 +70,5 @@ export const buildTheme = (mainColor: string) => {
   },
 }
 };
+
+export const SCREEN_TOP_RADIUS = 22;

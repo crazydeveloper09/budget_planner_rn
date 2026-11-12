@@ -8,6 +8,10 @@ export function recurringDate(entry: Transaction, month: Date): Date {
   return new Date(month.getFullYear(), month.getMonth(), Math.min(day, new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()));
 }
 
+export function recurringPostingKey(entry: Transaction, date = entry.date): string {
+  return JSON.stringify([date, entry.type, entry.name, entry.category, entry.amount, entry.memberId ?? 0]);
+}
+
 export function spendingPlan(profile: User | null, entries: Transaction[], now = new Date()) {
   const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
   const todayIso = toIsoDate(today);

@@ -73,4 +73,5 @@ export type CloudRecurring = {
 export type CloudEntry = CloudRecurring & {
   date: string;
   regular: boolean;
+  loanPaymentKey?: string;
 };

@@ -8,6 +8,8 @@ import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useFinance } from "../../contexts/FinanceContext";
 import { useAccent } from "../../contexts/ThemeContext";
 import ReceiptPreviewModal from "../../components/ReceiptPreviewModal";
+import EditEntryModal from "../../components/EditEntryModal";
+import { useProfile } from "../../contexts/ProfileContext";
 import { Receipt } from "../../db/interfaces";
 import { formatPln } from "../../helpers/money";
 import AddReceiptModal from "./AddReceiptModal";
@@ -38,9 +40,13 @@ const ReceiptsIndexScreen: React.FC = () => {
   const tabBarHeight = useBottomTabBarHeight();
   const keyboardVisible = useKeyboardVisible();
   const menuClearance = Math.max(tabBarHeight, Math.max(insets.bottom, 8) + 80);
-  const { receipts, removeReceipt } = useFinance();
+  const { entries, receipts, removeReceipt, updateEntry } = useFinance();
+  const { profile } = useProfile();
+  const loanEntries = useMemo(() => new Set(entries.filter((entry) => entry.loanPaymentKey).map((entry) => entry.id)), [entries]);
   const [open, setOpen] = useState<Receipt | null>(null);
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Receipt | null>(null);
+  const linkedEntry = editing?.entryId == null ? null : entries.find((entry) => entry.id === editing.entryId && entry.type === "expense") ?? null;
   const [query, setQuery] = useState("");
   const [month, setMonth] = useState<string | null>(null);
   const [category, setCategory] = useState<string | null>(null);
@@ -173,20 +179,27 @@ const ReceiptsIndexScreen: React.FC = () => {
           contentContainerStyle={[styles.list, { paddingBottom: menuClearance + 96 }]}
           columnWrapperStyle={styles.row}
           renderItem={({ item }) => (
-            <Pressable
-              onPress={() => setOpen(item)}
-              onLongPress={() => confirmDelete(item.id)}
-              style={[styles.card, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}
-            >
-              <Image source={{ uri: item.uri }} style={styles.image} />
-              <Text style={styles.cardTitle} numberOfLines={1}>
-                {item.name || item.category}
-              </Text>
-              {item.standalone ? <Text style={styles.meta}>Poza planem wydatków</Text> : null}
-              <Text style={[styles.meta, { color: accent }]} numberOfLines={2}>
-                {formatDay(item.date)} · {formatPln(item.amount)}
-              </Text>
-            </Pressable>
+            <View style={[styles.card, { backgroundColor: surfaces.surface, borderColor: surfaces.border }]}>
+              <Pressable onPress={() => setOpen(item)} onLongPress={() => confirmDelete(item.id)}>
+                <Image source={{ uri: item.uri }} style={styles.image} />
+                <Text style={styles.cardTitle} numberOfLines={1}>
+                  {item.name || item.category}
+                </Text>
+                {item.standalone ? <Text style={styles.meta}>Poza planem wydatków</Text> : null}
+                <Text style={[styles.meta, { color: accent }]} numberOfLines={2}>
+                  {formatDay(item.date)} · {formatPln(item.amount)}
+                </Text>
+              </Pressable>
+              {item.entryId === null || !loanEntries.has(item.entryId) ? <Pressable
+                accessibilityRole="button"
+                accessibilityLabel="Edytuj paragon"
+                onPress={() => setEditing(item)}
+                style={styles.editButton}
+              >
+                <MaterialCommunityIcons name="pencil-outline" size={18} color={accent} />
+                <Text style={{ color: accent }}>Edytuj</Text>
+              </Pressable> : null}
+            </View>
           )}
         />
       )}
@@ -196,6 +209,18 @@ const ReceiptsIndexScreen: React.FC = () => {
       </Pressable> : null}
 
       <AddReceiptModal visible={adding} onClose={() => setAdding(false)} />
+      {editing && editing.entryId === null ? (
+        <AddReceiptModal key={editing.id} visible receipt={editing} onClose={() => setEditing(null)} />
+      ) : null}
+      <EditEntryModal
+        entry={linkedEntry}
+        showDate
+        showOwnerPicker={profile?.accountType === "family"}
+        onClose={() => setEditing(null)}
+        onSave={async (input) => {
+          if (linkedEntry) await updateEntry(linkedEntry.id, input);
+        }}
+      />
       <ReceiptPreviewModal
         receipt={open}
         onClose={() => setOpen(null)}
@@ -206,6 +231,7 @@ const ReceiptsIndexScreen: React.FC = () => {
 };
 
 const styles = StyleSheet.create({
+  editButton: { flexDirection: "row", alignItems: "center", gap: 5, minHeight: 44, paddingHorizontal: 10 },
   root: { flex: 1, backgroundColor: "#fff" },
   toolbar: {
     paddingHorizontal: 12,

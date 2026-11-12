@@ -6,6 +6,8 @@ import DailyBudgetScreen from "../screens/User/DailyBudget";
 import WalletHistoryScreen from "../screens/User/WalletHistory";
 import RankingsScreen from "../screens/User/Rankings";
 import UserIndexScreen from "../screens/User/Index";
+import LoansScreen, { EditLoanScreen, LoanDetailsScreen, NewLoanScreen } from "../screens/Loans/Index";
+import { roundedScreenLayout } from "./RoundedScreen";
 import { getStackScreenOptions } from "./stackOptions";
 
 const Stack = createNativeStackNavigator();
@@ -14,7 +16,7 @@ const UserNavigator = () => {
   const { accent } = useAccent();
   return (
     <View style={styles.root}>
-      <Stack.Navigator screenOptions={getStackScreenOptions(accent)}>
+      <Stack.Navigator screenLayout={roundedScreenLayout} screenOptions={getStackScreenOptions(accent)}>
         <Stack.Screen
           name="User Index"
           component={UserIndexScreen}
@@ -34,6 +36,26 @@ const UserNavigator = () => {
           name="WalletHistory"
           component={WalletHistoryScreen}
           options={{ headerTitle: "Historia portfela" }}
+        />
+        <Stack.Screen
+          name="Loans"
+          component={LoansScreen}
+          options={{ headerTitle: "Kredyty i pożyczki" }}
+        />
+        <Stack.Screen
+          name="NewLoan"
+          component={NewLoanScreen}
+          options={{ title: "Nowe zobowiązanie" }}
+        />
+        <Stack.Screen
+          name="EditLoan"
+          component={EditLoanScreen}
+          options={{ title: "Edytuj zobowiązanie" }}
+        />
+        <Stack.Screen
+          name="LoanDetails"
+          component={LoanDetailsScreen}
+          options={{ title: "Harmonogram spłaty" }}
         />
         <Stack.Screen
           name="FamilyRankings"

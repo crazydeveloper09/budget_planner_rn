@@ -5,11 +5,12 @@ import {
   listReceipts,
   removeReceipt as deleteReceiptRow,
   removeReceiptsForEntry,
+  ReceiptDetails,
+  updateReceiptDetails,
   updateReceiptsForEntry,
 } from "../db/receipts";
 import {
   addTransaction as insertTransaction,
-  listTransactions,
   removeTransaction as deleteTransaction,
   updateTransaction,
 } from "../db/transactions";
@@ -17,37 +18,52 @@ import { persistReceiptFromPicker, receiptsDir } from "../helpers/receiptFiles";
 import { ownerLabel } from "../helpers/owners";
 import { useAuth } from "./AuthContext";
 import { useProfile } from "./ProfileContext";
+import { Loan } from "../db/loanTypes";
+import { addLoan, applyLoanAction, LoanAction, readLoanLedger } from "../db/loans";
+import { useLoanReminders } from "../notifications/loanReminders";
 
 type FinanceContextValue = {
   entries: Transaction[];
   receipts: Receipt[];
+  loans: Loan[];
+  createLoan: (loan: Loan) => Promise<void>;
+  changeLoan: (id: string, action: LoanAction) => Promise<void>;
   addEntry: (input: NewTransaction, options?: { receiptUris?: string[] }) => Promise<void>;
   updateEntry: (id: number, input: NewTransaction) => Promise<void>;
   removeEntry: (id: number) => Promise<void>;
   addReceiptsToEntry: (entry: Transaction, sourceUris: string[]) => Promise<void>;
   addStandaloneReceipts: (input: Pick<NewReceipt, "date" | "name" | "category" | "amount" | "ownerName">, sourceUris: string[]) => Promise<void>;
   removeReceipt: (id: string) => Promise<void>;
+  updateReceipt: (id: string, input: ReceiptDetails) => Promise<void>;
 };
 
 const FinanceContext = createContext<FinanceContextValue | undefined>(undefined);
+const noLoans: Loan[] = [];
 
 export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { profile, members, isReady, ledgerStamp, refreshProfile } = useProfile();
   const { pushBudget } = useAuth();
   const [entries, setEntries] = useState<Transaction[]>([]);
   const [receipts, setReceipts] = useState<Receipt[]>([]);
+  const [loans, setLoans] = useState<Loan[]>([]);
+  const [loadedLoanProfile, setLoadedLoanProfile] = useState<number | null>(null);
+  useLoanReminders(isReady ? (!profile ? noLoans : profile.id === loadedLoanProfile ? loans : undefined) : undefined);
 
   const reloadLedger = useCallback(async () => {
     if (!profile) {
       setEntries([]);
       setReceipts([]);
+      setLoans([]);
+      setLoadedLoanProfile(null);
       return;
     }
-    const [nextEntries, nextReceipts] = await Promise.all([
-      listTransactions(profile.id),
+    const [ledger, nextReceipts] = await Promise.all([
+      readLoanLedger(profile.id),
       listReceipts(profile.id),
     ]);
-    setEntries(nextEntries);
+    setEntries(ledger.entries);
+    setLoans(ledger.loans);
+    setLoadedLoanProfile(profile.id);
     setReceipts(nextReceipts);
   }, [profile]);
 
@@ -55,6 +71,8 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     if (!isReady || !profile) {
       setEntries([]);
       setReceipts([]);
+      setLoans([]);
+      setLoadedLoanProfile(null);
       return;
     }
     void reloadLedger().catch((error) => {
@@ -207,9 +225,35 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     [pushBudget]
   );
 
+  const updateReceipt = useCallback(async (id: string, input: ReceiptDetails) => {
+    if (!profile) throw new Error("No active profile");
+    await updateReceiptDetails(profile.id, id, input);
+    setReceipts(await listReceipts(profile.id));
+    try {
+      await pushBudget();
+    } catch {
+      // Synchronization retries the local change.
+    }
+  }, [profile, pushBudget]);
+
+  const createLoan = useCallback(async (loan: Loan) => {
+    if (!profile) throw new Error("Brak aktywnego profilu.");
+    await addLoan(profile.id, loan);
+    await reloadLedger();
+    await pushBudget().catch(console.error);
+  }, [profile, reloadLedger, pushBudget]);
+
+  const changeLoan = useCallback(async (id: string, action: LoanAction) => {
+    if (!profile) throw new Error("Brak aktywnego profilu.");
+    await applyLoanAction(profile.id, id, action);
+    await refreshProfile();
+    await reloadLedger();
+    await pushBudget().catch(console.error);
+  }, [profile, refreshProfile, reloadLedger, pushBudget]);
+
   const value = useMemo(
-    () => ({ entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt }),
-    [entries, receipts, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt]
+    () => ({ entries, receipts, loans, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt }),
+    [entries, receipts, loans, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt]
   );
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;

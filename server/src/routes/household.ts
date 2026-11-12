@@ -382,7 +382,7 @@ router.put("/households/receipts/:receiptId", requireAccess, async (req, res) =>
     res.status(400).json({ error: "Niepoprawny zaszyfrowany paragon." });
     return;
   }
-  await Receipt.findOneAndUpdate(
+  const item = await Receipt.findOneAndUpdate(
     { householdId: authed.householdId, receiptId: String(req.params.receiptId) },
     {
       householdId: authed.householdId,
@@ -394,7 +394,7 @@ router.put("/households/receipts/:receiptId", requireAccess, async (req, res) =>
     { upsert: true, new: true }
   );
   notifyHousehold(authed.householdId);
-  res.json({ ok: true });
+  res.json({ ok: true, updatedAt: item?.updatedAt });
 });
 
 router.delete("/households/receipts/:receiptId", requireAccess, async (req, res) => {

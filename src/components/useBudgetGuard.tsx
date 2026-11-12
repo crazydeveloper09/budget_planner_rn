@@ -11,11 +11,12 @@ import { useAccent } from "../contexts/ThemeContext";
 import { expenseOutlook } from "../helpers/goalPlan";
 import { formatPln } from "../helpers/money";
 import { toIsoDate } from "../helpers/dates";
+import { upcomingLoanExpenses } from "../helpers/loans";
 
 type Request = { remaining: number | null; amount: number; isExpense: boolean; title?: string; category?: string; date?: string; excludeEntryId?: number; onReschedule?: (date: string) => void };
 export function useBudgetGuard() {
   const { profile, members, addGoal } = useProfile();
-  const { entries } = useFinance();
+  const { entries, loans } = useFinance();
   const { accent, surfaces } = useAccent();
 
   const [request, setRequest] = useState<Request | null>(null);
@@ -29,11 +30,24 @@ export function useBudgetGuard() {
     resolve?.(value);
   };
   const confirmIfOverBudget = (input: Request): Promise<boolean> => {
-    if (!input.isExpense || input.remaining == null || input.amount <= input.remaining + 0.001) return Promise.resolve(true);
+    if (!input.isExpense || input.remaining == null) return Promise.resolve(true);
+    const today = toIsoDate(new Date());
+    const remaining = input.remaining - upcomingLoanExpenses(loans, today, profile?.id ?? 0)
+      .filter((entry) => entry.date <= (input.date ?? today))
+      .reduce((sum, entry) => sum + entry.amount, 0);
+    if (input.amount <= remaining + 0.001) return Promise.resolve(true);
     if (pending.current) return Promise.resolve(false);
-    return new Promise(resolve => { pending.current = resolve; setRequest(input); });
+    return new Promise(resolve => { pending.current = resolve; setRequest({ ...input, remaining }); });
   };
-  const outlook = useMemo(() => request ? expenseOutlook(profile, members, entries.filter(e => e.id !== request.excludeEntryId), request.amount, toIsoDate(new Date()), request.date) : null, [request, profile, members, entries]);
+  const outlook = useMemo(() => {
+    if (!request) return null;
+    const today = toIsoDate(new Date());
+    const forecastEntries = [
+      ...entries.filter((entry) => entry.id !== request.excludeEntryId),
+      ...upcomingLoanExpenses(loans, today, profile?.id ?? 0),
+    ];
+    return expenseOutlook(profile, members, forecastEntries, request.amount, today, request.date);
+  }, [request, profile, members, entries, loans]);
   const displayDate = (date: string) => date.split("-").reverse().join(".");
   const shortage = Math.max(0, (request?.amount ?? 0) - (request?.remaining ?? 0));
   const saveAsGoal = async () => {

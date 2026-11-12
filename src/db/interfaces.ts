@@ -52,6 +52,7 @@ export interface Transaction {
   amount: number;
   regular: boolean;
   memberId: number | null;
+  loanPaymentKey?: string;
 }
 
 export type NewTransaction = Omit<Transaction, "id" | "userId">;

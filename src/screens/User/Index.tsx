@@ -225,6 +225,21 @@ const UserIndexScreen: React.FC = () => {
       </View>
 
       <Pressable
+        onPress={() => navigation.navigate("Loans" as never)}
+        style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
+        accessibilityRole="button"
+      >
+        <View style={[styles.rankIcon, { backgroundColor: accent }]}>
+          <MaterialCommunityIcons name="bank-outline" size={28} color="#fff" />
+        </View>
+        <View style={styles.rankCopy}>
+          <Text style={styles.rankTitle}>Kredyty i pożyczki</Text>
+          <Text style={styles.rankDeck}>Kalkulator i harmonogramy spłat</Text>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
+      </Pressable>
+
+      <Pressable
         onPress={() => navigation.navigate("DailyBudget" as never)}
         style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
         accessibilityRole="button"

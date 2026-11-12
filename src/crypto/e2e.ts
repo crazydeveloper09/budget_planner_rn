@@ -5,6 +5,7 @@ import { getRandomBytes } from "expo-crypto";
 import { bytesToHex, hexToBytes, utf8Bytes, utf8String } from "./bytes";
 import { CloudEntry, E2eEnvelope, E2eWrap } from "../api/types";
 import { AccountType, ChatPlan, WalletAdjustment } from "../db/interfaces";
+import { Loan } from "../db/loanTypes";
 
 const PBKDF2_ITERS = 120_000;
 
@@ -27,6 +28,7 @@ export type BudgetPlaintext = {
     salary: number | null;
   }>;
   entries: CloudEntry[];
+  loans?: Loan[];
   chat?: {
     topics: Array<{ id: string; title: string; createdAt: string }>;
     messages: Array<{
