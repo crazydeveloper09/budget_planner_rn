@@ -16,7 +16,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import CalendarPicker from "react-native-calendar-picker";
-import { Button, IconButton, Text, TextInput } from "react-native-paper";
+import { Button, IconButton, Switch, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { months, weekdays } from "../../../defaultData";
 import { useFinance } from "../../contexts/FinanceContext";
@@ -25,6 +25,8 @@ import { Receipt, Transaction, TransactionType } from "../../db/interfaces";
 import { pickReceiptImage } from "../../helpers/receiptFiles";
 import { parsePickedDate, toIsoDate } from "../../helpers/dates";
 import { formatPln, parseAmount } from "../../helpers/money";
+import ShopPicker from "../../components/ShopPicker";
+import { Shop } from "../../helpers/shops";
 import CategoryPicker from "../../components/CategoryPicker";
 import OwnerPicker from "../../components/OwnerPicker";
 import ReceiptAttach from "../../components/ReceiptAttach";
@@ -144,6 +146,8 @@ const ExpensesIndexScreen: React.FC = () => {
   const [saving, setSaving] = useState(false);
   const [editing, setEditing] = useState<Transaction | null>(null);
   const [name, setName] = useState("");
+  const [customName, setCustomName] = useState(false);
+  const [shop, setShop] = useState<Shop | null>(null);
   const [category, setCategory] = useState("");
   const [amount, setAmount] = useState("");
   const [memberId, setMemberId] = useState<number | null>(null);
@@ -189,6 +193,8 @@ const ExpensesIndexScreen: React.FC = () => {
 
   const resetForm = () => {
     setName("");
+    setShop(null);
+    setCustomName(false);
     setCategory("");
     setAmount("");
     setMemberId(null);
@@ -199,10 +205,11 @@ const ExpensesIndexScreen: React.FC = () => {
   const saveEntry = async () => {
     const parsed = parseAmount(amount);
     if (saving || !formType || !category || parsed === null) return;
+    const entryName = formType === "expense" && !customName ? shop?.name ?? "" : name.trim();
     setSaving(true);
     try {
       const ok = await confirmIfOverBudget({
-        title: name.trim() || category,
+        title: entryName || category,
         category,
         date: selectedIso,
         onReschedule: (value) => setSelectedStartDate(parsePickedDate(value)),
@@ -215,7 +222,7 @@ const ExpensesIndexScreen: React.FC = () => {
         {
           date: selectedIso,
           type: formType,
-          name: name.trim(),
+          name: entryName,
           category,
           amount: parsed,
           regular: false,
@@ -404,16 +411,31 @@ const ExpensesIndexScreen: React.FC = () => {
                   outlineColor="#d7c8d3"
                   activeOutlineColor={accent}
                 />
-                <TextInput
-                  mode="outlined"
-                  label="Nazwa (opcjonalnie)"
-                  placeholder={formType === "expense" ? "np. Lidl" : "np. Premia za kwartał"}
-                  value={name}
-                  onChangeText={setName}
-                  style={styles.input}
-                  outlineColor="#d7c8d3"
-                  activeOutlineColor={accent}
-                />
+                {formType === "expense" && (
+                  <>
+                    {!customName && profile && (
+                      <ShopPicker key={profile.id} profileId={profile.id} selected={shop} onSelect={selected => {
+                        setShop(selected);
+                        if (selected) setCategory(selected.category);
+                      }} />
+                    )}
+                    <View style={{ flexDirection: "row", alignItems: "center", justifyContent: "space-between" }}>
+                      <Text>Własna nazwa</Text>
+                      <Switch accessibilityLabel="Własna nazwa" value={customName} onValueChange={setCustomName} />
+                    </View>
+                  </>
+                )}
+                {(formType === "income" || customName) && (
+                  <TextInput
+                    mode="outlined"
+                    label="Nazwa (opcjonalnie)"
+                    value={name}
+                    onChangeText={setName}
+                    style={styles.input}
+                    outlineColor="#d7c8d3"
+                    activeOutlineColor={accent}
+                  />
+                )}
                 <CategoryPicker type={formType} value={category} onChange={setCategory} />
                 {formType === "expense" ? (
                   <ReceiptAttach uris={pendingReceipts} onChange={setPendingReceipts} />

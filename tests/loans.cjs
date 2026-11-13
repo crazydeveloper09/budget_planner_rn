@@ -38,7 +38,9 @@ const { initDb } = require("../src/db/init");
 const { addLoan, applyLoanAction, readLoanLedger, replaceLoans } = require("../src/db/loans");
 const { replaceAllTransactions, removeTransaction } = require("../src/db/transactions");
 const { assessLoanBudget, dueDate, estimatedApr, loanSchedule, remainingPrincipal, suggestInstallment } = require("../src/helpers/loans");
-const { loanReminderPlan } = require("../src/notifications/loanReminders");
+const { confirmRecurringExpense } = require("../src/db/recurringExpenses");
+const { addTransaction, listTransactions } = require("../src/db/transactions");
+const { loanReminderPlan, recurringExpenseReminderPlan } = require("../src/notifications/loanReminders");
 
 const loan = {
   id: "test", name: "Loan", kind: "private", principal: 6000,
@@ -46,6 +48,31 @@ const loan = {
   rateChanges: {}, installment: 600, installmentOverrides: {}, financedFee: 0,
   upfrontFee: 0, monthlyFee: 0, payments: [], skipped: [],
 };
+
+async function checkRecurringExpenses() {
+  const userId = 1;
+  const month = new Date(2025, 1, 1);
+  await addTransaction(userId, {
+    date: "2000-01-31", type: "expense", name: "Rent", category: "Bills",
+    amount: 500, regular: true, memberId: null,
+  });
+  const [template] = await listTransactions(userId);
+  const february = item => item.date.getMonth() === 1;
+  assert.deepEqual(
+    recurringExpenseReminderPlan([template], month).filter(february)
+      .map(item => [item.days, item.date.getDate(), item.date.getHours()]),
+    [[7, 21, 9], [3, 25, 9], [1, 27, 9]]
+  );
+  await Promise.all([
+    confirmRecurringExpense(userId, template.id, month),
+    confirmRecurringExpense(userId, template.id, month),
+  ]);
+  const entries = await listTransactions(userId);
+  assert.equal(entries.filter(item => !item.regular && item.name === "Rent").length, 1);
+  assert.equal(recurringExpenseReminderPlan(entries, month).some(february), false);
+  await removeTransaction(template.id, userId);
+  await removeTransaction(entries.find(item => !item.regular && item.name === "Rent").id, userId);
+}
 
 async function run() {
   assert.equal(dueDate(loan.firstDue, 1), "2025-02-28");
@@ -87,6 +114,7 @@ async function run() {
   assert.equal(assessLoanBudget(null, forecastEntries, [], [{ date: "2025-01-31", amount: 1500 }], 500, "2024-12-31"), null);
 
   await initDb();
+  await checkRecurringExpenses();
   await addLoan(1, loan);
   await applyLoanAction(1, loan.id, { type: "edit", name: "Renamed loan", terms: { ...loan, installment: 600 } });
   const pay = { type: "pay", number: 1, date: "2025-01-31" };

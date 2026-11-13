@@ -4,12 +4,25 @@ import { remainingAfterDay } from "./wallet";
 
 export function recurringDate(entry: Transaction, month: Date): Date {
   // Existing templates used the 10th. New templates encode the selected day in January 2000.
-  const day = entry.type === "income" && entry.date.startsWith("2000-01-") ? Number(entry.date.slice(8, 10)) : 10;
+  const day = entry.date.startsWith("2000-01-") ? Number(entry.date.slice(8, 10)) : 10;
   return new Date(month.getFullYear(), month.getMonth(), Math.min(day, new Date(month.getFullYear(), month.getMonth() + 1, 0).getDate()));
 }
 
 export function recurringPostingKey(entry: Transaction, date = entry.date): string {
   return JSON.stringify([date, entry.type, entry.name, entry.category, entry.amount, entry.memberId ?? 0]);
+}
+
+export function recurringExpenseKey(entry: Transaction, month: Date): string {
+  const period = toIsoDate(month).slice(0, 7);
+  return JSON.stringify([entry.recurringKey ?? recurringPostingKey(entry), period]);
+}
+
+export function recurringExpensePaid(entry: Transaction, month: Date, entries: Transaction[]): boolean {
+  const key = recurringExpenseKey(entry, month);
+  const due = toIsoDate(recurringDate(entry, month));
+  const legacyKey = recurringPostingKey(entry, due);
+  return entries.some(item => !item.regular && item.type === "expense" &&
+    (item.recurringKey === key || (!item.recurringKey && !item.loanPaymentKey && recurringPostingKey(item) === legacyKey)));
 }
 
 export function spendingPlan(profile: User | null, entries: Transaction[], now = new Date()) {
@@ -30,8 +43,8 @@ export function spendingPlan(profile: User | null, entries: Transaction[], now =
     for (const entry of entries.filter(e => e.regular && e.type === "expense")) {
       for (let month = new Date(today.getFullYear(), today.getMonth(), 1); month <= end; month.setMonth(month.getMonth() + 1)) {
         const due = toIsoDate(recurringDate(entry, month));
-        if (due <= todayIso || due > endIso) continue;
-        const posted = entries.some(e => !e.regular && e.type === "expense" && e.date === due && e.name === entry.name && e.category === entry.category && e.amount === entry.amount && e.memberId === entry.memberId);
+        if (due > endIso) continue;
+        const posted = recurringExpensePaid(entry, month, entries);
         if (!posted) reserve += entry.amount;
       }
     }

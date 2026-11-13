@@ -14,7 +14,7 @@ export async function applyMonthlyRecurringIfDue(): Promise<boolean> {
   const entries = await listTransactions(profile.id);
   const posted = new Set(entries.filter(entry => !entry.regular).map(entry => recurringPostingKey(entry)));
   let changed = false;
-  for (const item of entries.filter(entry => entry.regular)) {
+  for (const item of entries.filter(entry => entry.regular && entry.type === "income")) {
     const applyDate = toIsoDate(recurringDate(item, now));
     // The wallet snapshot already includes transactions on and before its date.
     if (applyDate > today || (profile.walletSetOn && applyDate <= profile.walletSetOn)) continue;

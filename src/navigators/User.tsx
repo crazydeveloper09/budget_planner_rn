@@ -5,6 +5,7 @@ import GoalDetailsScreen from "../screens/User/GoalDetails";
 import DailyBudgetScreen from "../screens/User/DailyBudget";
 import WalletHistoryScreen from "../screens/User/WalletHistory";
 import RankingsScreen from "../screens/User/Rankings";
+import MyShopsScreen from "../screens/User/MyShops";
 import UserIndexScreen from "../screens/User/Index";
 import LoansScreen, { EditLoanScreen, LoanDetailsScreen, NewLoanScreen } from "../screens/Loans/Index";
 import { roundedScreenLayout } from "./RoundedScreen";
@@ -22,6 +23,7 @@ const UserNavigator = () => {
           component={UserIndexScreen}
           options={{ headerTitle: "Profil" }}
         />
+        <Stack.Screen name="MyShops" component={MyShopsScreen} options={{ headerTitle: "Moje sklepy" }} />
         <Stack.Screen
           name="GoalDetails"
           component={GoalDetailsScreen}

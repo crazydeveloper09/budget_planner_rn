@@ -16,6 +16,7 @@ type EntryRow = {
   amount: number;
   is_regular: number;
   member_id: number;
+  recurring_key?: string | null;
   loan_payment_key?: string | null;
 };
 
@@ -30,6 +31,7 @@ function mapEntry(row: EntryRow): Transaction {
     amount: row.amount,
     regular: Boolean(row.is_regular),
     memberId: row.member_id ? row.member_id : null,
+    ...(row.recurring_key ? { recurringKey: row.recurring_key } : {}),
     ...(row.loan_payment_key ? { loanPaymentKey: row.loan_payment_key } : {}),
   };
 }
@@ -37,7 +39,7 @@ function mapEntry(row: EntryRow): Transaction {
 export async function listTransactions(userId: number, connection?: Database): Promise<Transaction[]> {
   const database = connection ?? await getDb();
   const rows = await database.getAllAsync<EntryRow>(
-    `SELECT id, user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id, loan_payment_key
+    `SELECT id, user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id, loan_payment_key, recurring_key
      FROM entries WHERE user_id = ? ORDER BY id DESC`,
     [Number(userId)]
   );
@@ -47,6 +49,7 @@ export async function listTransactions(userId: number, connection?: Database): P
 
 export async function addTransaction(userId: number, input: NewTransaction, connection?: Database): Promise<Transaction> {
   const database = connection ?? await getDb();
+  const recurringKey = input.recurringKey ?? (input.regular && input.type === "expense" ? bytesToHex(getRandomBytes(16)) : undefined);
   const title = String(input.name ?? "").trim();
   const category = String(input.category ?? "").trim();
   const amount = Number(input.amount);
@@ -65,11 +68,11 @@ export async function addTransaction(userId: number, input: NewTransaction, conn
   };
 
   let result: { lastInsertRowId: number };
-  if (connection) {
+  if (connection || recurringKey) {
     result = await database.runAsync(
-      `INSERT INTO entries (user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-      [params.$userId, params.$entryDate, params.$entryKind, title, category, amount, isRegular, memberId]
+      `INSERT INTO entries (user_id, entry_date, entry_kind, title, category, amount, is_regular, member_id, recurring_key)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [params.$userId, params.$entryDate, params.$entryKind, title, category, amount, isRegular, memberId, recurringKey ?? null]
     );
   } else try {
     result = await database.runAsync(
@@ -99,6 +102,7 @@ export async function addTransaction(userId: number, input: NewTransaction, conn
     amount,
     regular: Boolean(isRegular),
     memberId: memberId || null,
+    ...(recurringKey ? { recurringKey } : {}),
   };
 }
 

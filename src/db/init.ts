@@ -208,6 +208,9 @@ async function migrate(database: Database) {
   if (!receiptColumns.some((column) => column.name === "sync_version")) {
     await database.execAsync("ALTER TABLE receipts ADD COLUMN sync_version TEXT");
   }
+  if (!entryColumns.some((column) => column.name === "recurring_key")) {
+    await database.execAsync("ALTER TABLE entries ADD COLUMN recurring_key TEXT");
+  }
   if (!entryColumns.some((column) => column.name === "loan_payment_key")) {
     await database.execAsync("ALTER TABLE entries ADD COLUMN loan_payment_key TEXT");
   }

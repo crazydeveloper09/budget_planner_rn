@@ -75,7 +75,7 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
   const leftover = remainingAfterDay(profile, entries, date);
   const extra = entry && entry.type === "expense" && entry.date === date ? entry.amount : 0;
   const validDay = /^\d{1,2}$/.test(day) && Number(day) >= 1 && Number(day) <= 31;
-  const canSave = (!entry?.regular || entry.type !== "income" || validDay) && Boolean(category) && parseAmount(amount) !== null;
+  const canSave = (!entry?.regular || validDay) && Boolean(category) && parseAmount(amount) !== null;
   const type = entry?.type ?? "expense";
   const title =
     type === "expense"
@@ -103,7 +103,7 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
     setSaving(true);
     try {
       await onSave({
-        date: entry.regular && entry.type === "income" ? `2000-01-${day.padStart(2, "0")}` : date,
+        date: entry.regular ? `2000-01-${day.padStart(2, "0")}` : date,
         type: entry.type,
         name: name.trim(),
         category,
@@ -170,7 +170,7 @@ const EditEntryModal: React.FC<EditEntryModalProps> = ({
               outlineColor="#d7c8d3"
               activeOutlineColor={accent}
             />
-            {entry?.regular && type === "income" ? <TextInput mode="outlined" label="Dzień wpływu w miesiącu (1–31)" value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /> : null}
+            {entry?.regular ? <TextInput mode="outlined" label={type === "income" ? "Dzień wpływu w miesiącu (1–31)" : "Termin płatności (dzień miesiąca, 1–31)"} value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /> : null}
             <CategoryPicker recurring={entry?.regular} type={type} value={category} onChange={setCategory} />
             <Button
               mode="contained"

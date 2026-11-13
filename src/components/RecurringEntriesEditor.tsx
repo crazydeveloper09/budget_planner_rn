@@ -1,12 +1,12 @@
 import React, { useState } from "react";
-import { Pressable, StyleSheet, View } from "react-native";
+import { Alert, Pressable, StyleSheet, View } from "react-native";
 import { Button, Text, TextInput } from "react-native-paper";
 import { MaterialCommunityIcons } from "@expo/vector-icons";
 import { useAccent } from "../contexts/ThemeContext";
 import { Member, NewTransaction, Transaction, TransactionType } from "../db/interfaces";
 import { formatPln, parseAmount } from "../helpers/money";
 import { ownerLabel } from "../helpers/owners";
-import { toIsoDate } from "../helpers/dates";
+import { recurringDate, recurringExpensePaid } from "../helpers/spendingPlan";
 import CategoryPicker from "./CategoryPicker";
 import EditEntryModal from "./EditEntryModal";
 import OwnerPicker from "./OwnerPicker";
@@ -22,6 +22,8 @@ type RecurringEntriesEditorProps = {
   readOnly?: boolean;
   onAdd: (input: { name: string; category: string; amount: number; memberId: number | null; date: string }) => void;
   onUpdate: (id: number, input: NewTransaction) => void;
+  entries?: Transaction[];
+  onConfirmPayment?: (id: number, month: Date) => Promise<void>;
   onRemove: (id: number) => void;
 };
 
@@ -37,6 +39,8 @@ export default function RecurringEntriesEditor({
   onAdd,
   onUpdate,
   onRemove,
+  entries = [],
+  onConfirmPayment,
 }: RecurringEntriesEditorProps) {
   const { accent, surfaces } = useAccent();
   const [formOpen, setFormOpen] = useState(false);
@@ -46,9 +50,11 @@ export default function RecurringEntriesEditor({
   const [amount, setAmount] = useState("");
   const [memberId, setMemberId] = useState<number | null>(null);
 
+  const month = new Date();
+  const [confirming, setConfirming] = useState<number | null>(null);
   const [day, setDay] = useState("10");
   const validDay = /^\d{1,2}$/.test(day) && Number(day) >= 1 && Number(day) <= 31;
-  const canAdd = (kind !== "income" || validDay) && category.length > 0 && parseAmount(amount) !== null;
+  const canAdd = validDay && category.length > 0 && parseAmount(amount) !== null;
 
   const resetForm = () => {
     setName("");
@@ -62,7 +68,7 @@ export default function RecurringEntriesEditor({
   const submit = () => {
     const parsed = parseAmount(amount);
     if (!category || parsed === null || !canAdd) return;
-    onAdd({ name: name.trim(), category, amount: parsed, memberId, date: kind === "income" ? `2000-01-${day.padStart(2, "0")}` : toIsoDate(new Date()) });
+    onAdd({ name: name.trim(), category, amount: parsed, memberId, date: `2000-01-${day.padStart(2, "0")}` });
     resetForm();
   };
 
@@ -113,7 +119,7 @@ export default function RecurringEntriesEditor({
             outlineColor="#d7c8d3"
             activeOutlineColor={accent}
           />
-          {kind === "income" ? <><TextInput mode="outlined" label="Dzień wpływu w miesiącu (1–31)" value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /><Text>W krótszym miesiącu: ostatni dzień miesiąca.</Text></> : null}
+          <><TextInput mode="outlined" label={kind === "income" ? "Dzień wpływu w miesiącu (1–31)" : "Termin płatności (dzień miesiąca, 1–31)"} value={day} onChangeText={setDay} keyboardType="number-pad" maxLength={2} style={styles.input} /><Text>W krótszym miesiącu: ostatni dzień miesiąca.</Text></>
           <CategoryPicker recurring type={kind} value={category} onChange={setCategory} />
           <Button
             mode="outlined"
@@ -137,9 +143,26 @@ export default function RecurringEntriesEditor({
                 <Text style={styles.personName}>{item.name || item.category}</Text>
                 <Text style={styles.personMeta}>
                   {item.category} · {formatPln(item.amount)} / miesiąc
-                  {kind === "income" ? ` · ${item.date.startsWith("2000-01-") ? Number(item.date.slice(8, 10)) : 10}. dzień miesiąca` : ""}
+                  {` · ${recurringDate(item, month).getDate()}. dzień miesiąca`}
                   {showOwnerPicker ? ` · ${ownerLabel(item.memberId, members)}` : ""}
                 </Text>
+                {kind === "expense" && (
+                  recurringExpensePaid(item, month, entries)
+                    ? <Text style={styles.personMeta}>Zapłacono w tym miesiącu</Text>
+                    : !readOnly && onConfirmPayment && (
+                      confirming === item.id ? (
+                        <View>
+                          <Text>Czy ten stały wydatek został zapłacony?</Text>
+                          <Button onPress={() => setConfirming(null)}>Jeszcze nie</Button>
+                          <Button onPress={() => {
+                            setConfirming(null);
+                            void onConfirmPayment(item.id, month).catch(() =>
+                              Alert.alert("Nie udało się zapisać płatności", "Spróbuj ponownie."));
+                          }}>Tak, zapłacono</Button>
+                        </View>
+                      ) : <Button onPress={() => setConfirming(item.id)}>Potwierdź płatność</Button>
+                    )
+                )}
               </View>
               {readOnly ? null : (
                 <>

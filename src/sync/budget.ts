@@ -46,6 +46,7 @@ function toCloudEntries(entries: Transaction[], people: Member[]): CloudEntry[] 
       amount: entry.amount,
       regular: entry.regular,
       loanPaymentKey: entry.loanPaymentKey,
+      recurringKey: entry.recurringKey,
       ownerName: label === "Wspólny" ? null : label,
     };
   });
@@ -256,6 +257,7 @@ export async function pullCloudBudgetIntoSqlite(onApplied?: () => Promise<unknow
     amount: item.amount,
     regular: item.regular,
     loanPaymentKey: item.loanPaymentKey,
+    recurringKey: item.recurringKey,
     memberId: item.ownerName ? idsByName[item.ownerName] ?? null : null,
   }));
   const profileId = profile.id;

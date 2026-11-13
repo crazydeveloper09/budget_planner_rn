@@ -42,7 +42,7 @@ const UserIndexScreen: React.FC = () => {
     updateGoal,
     removeGoal,
   } = useProfile();
-  const { entries, addEntry, updateEntry, removeEntry } = useFinance();
+  const { entries, confirmPayment, addEntry, updateEntry, removeEntry } = useFinance();
   const [walletDraft, setWalletDraft] = useState("");
   const [walletEditing, setWalletEditing] = useState(false);
   const [walletSaving, setWalletSaving] = useState(false);
@@ -225,6 +225,20 @@ const UserIndexScreen: React.FC = () => {
       </View>
 
       <Pressable
+        onPress={() => navigation.navigate("MyShops" as never)}
+        style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
+        accessibilityRole="button"
+      >
+        <View style={[styles.rankIcon, { backgroundColor: accent }]}>
+          <MaterialCommunityIcons name="store-outline" size={28} color="#fff" />
+        </View>
+        <View style={styles.rankCopy}>
+          <Text style={styles.rankTitle}>Moje sklepy</Text>
+        </View>
+        <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
+      </Pressable>
+
+      <Pressable
         onPress={() => navigation.navigate("Loans" as never)}
         style={[styles.rankCta, { backgroundColor: surfaces.surface }]}
         accessibilityRole="button"
@@ -330,6 +344,8 @@ const UserIndexScreen: React.FC = () => {
         emptyLabel="Nie dodano jeszcze stałych wydatków"
         kind="expense"
         items={recurringExpenses}
+        entries={entries}
+        onConfirmPayment={confirmPayment}
         members={members}
         showOwnerPicker={isFamily}
         readOnly={!canAdmin}

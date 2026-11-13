@@ -20,12 +20,14 @@ import { useAuth } from "./AuthContext";
 import { useProfile } from "./ProfileContext";
 import { Loan } from "../db/loanTypes";
 import { addLoan, applyLoanAction, LoanAction, readLoanLedger } from "../db/loans";
-import { useLoanReminders } from "../notifications/loanReminders";
+import { confirmRecurringExpense } from "../db/recurringExpenses";
+import { usePaymentReminders } from "../notifications/loanReminders";
 
 type FinanceContextValue = {
   entries: Transaction[];
   receipts: Receipt[];
   loans: Loan[];
+  confirmPayment: (id: number, month: Date) => Promise<void>;
   createLoan: (loan: Loan) => Promise<void>;
   changeLoan: (id: string, action: LoanAction) => Promise<void>;
   addEntry: (input: NewTransaction, options?: { receiptUris?: string[] }) => Promise<void>;
@@ -47,7 +49,7 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [loans, setLoans] = useState<Loan[]>([]);
   const [loadedLoanProfile, setLoadedLoanProfile] = useState<number | null>(null);
-  useLoanReminders(isReady ? (!profile ? noLoans : profile.id === loadedLoanProfile ? loans : undefined) : undefined);
+  usePaymentReminders(isReady ? (!profile ? noLoans : profile.id === loadedLoanProfile ? loans : undefined) : undefined, profile ? entries : []);
 
   const reloadLedger = useCallback(async () => {
     if (!profile) {
@@ -251,9 +253,16 @@ export const FinanceProvider: React.FC<{ children: React.ReactNode }> = ({ child
     await pushBudget().catch(console.error);
   }, [profile, refreshProfile, reloadLedger, pushBudget]);
 
+  const confirmPayment = useCallback(async (id: number, month: Date) => {
+    if (!profile) throw new Error("Brak aktywnego profilu.");
+    await confirmRecurringExpense(profile.id, id, month);
+    await reloadLedger();
+    await pushBudget().catch(() => {});
+  }, [profile, reloadLedger, pushBudget]);
+
   const value = useMemo(
-    () => ({ entries, receipts, loans, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt }),
-    [entries, receipts, loans, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt]
+    () => ({ entries, receipts, loans, confirmPayment, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt }),
+    [entries, receipts, loans, confirmPayment, createLoan, changeLoan, addEntry, updateEntry, removeEntry, addReceiptsToEntry, addStandaloneReceipts, removeReceipt, updateReceipt]
   );
 
   return <FinanceContext.Provider value={value}>{children}</FinanceContext.Provider>;
