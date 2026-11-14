@@ -36,6 +36,18 @@ export function shopGroups(custom: Shop[], query = "") {
   })).filter(group => group.names.length > 0);
 }
 
+export function suggestShops(custom: Shop[], query: string): Shop[] {
+  const search = searchKey(query.trim());
+  if (!search) return [];
+  const matches = shopGroups(custom).flatMap(({ category, names }) =>
+    names.filter(name => searchKey(name).includes(search)).map(name => ({ name, category }))
+  );
+  return matches.sort((a, b) =>
+    Number(searchKey(b.name).startsWith(search)) - Number(searchKey(a.name).startsWith(search)) ||
+    a.name.localeCompare(b.name, "pl")
+  ).slice(0, 5);
+}
+
 export async function addShop(profileId: number, input: Shop): Promise<Shop[]> {
   const name = input.name.trim();
   const category = input.category;

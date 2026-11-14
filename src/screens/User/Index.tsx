@@ -234,6 +234,7 @@ const UserIndexScreen: React.FC = () => {
         </View>
         <View style={styles.rankCopy}>
           <Text style={styles.rankTitle}>Moje sklepy</Text>
+          <Text style={styles.rankDeck}>Dodaj sklepy do podpowiedzi przy wpisywaniu wydatków</Text>
         </View>
         <MaterialCommunityIcons name="chevron-right" size={22} color={accent} />
       </Pressable>

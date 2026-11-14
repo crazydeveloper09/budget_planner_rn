@@ -7,11 +7,13 @@ import CategoryPicker from "../../components/CategoryPicker";
 import { useAccent } from "../../contexts/ThemeContext";
 import { EXPENSE_CATEGORIES } from "../../helpers/categories";
 import { useProfile } from "../../contexts/ProfileContext";
-import { addShop, readShops, Shop } from "../../helpers/shops";
+import { addShop, readShops, Shop, shopGroups } from "../../helpers/shops";
 
 function ShopForm({ profileId }: { profileId: number }) {
   const navigation = useNavigation();
   const { accent, surfaces } = useAccent();
+  const [infoOpen, setInfoOpen] = useState(false);
+  const [showCatalog, setShowCatalog] = useState(false);
   const [open, setOpen] = useState(false);
   const [loadError, setLoadError] = useState("");
   const [shops, setShops] = useState<Shop[]>([]);
@@ -25,7 +27,10 @@ function ShopForm({ profileId }: { profileId: number }) {
   useLayoutEffect(() => {
     navigation.setOptions({
       headerRight: () => (
-        <IconButton icon="plus" iconColor="#fff" style={styles.headerAdd} accessibilityLabel="Dodaj sklep" disabled={!loaded} onPress={() => setOpen(true)} />
+        <View style={styles.headerButtons}>
+          <IconButton icon="information-outline" iconColor="#fff" style={styles.infoButton} accessibilityLabel="Informacje o sklepach" onPress={() => setInfoOpen(true)} />
+          <IconButton icon="plus" iconColor="#fff" style={styles.headerAdd} accessibilityLabel="Dodaj sklep" disabled={!loaded} onPress={() => setOpen(true)} />
+        </View>
       ),
     });
   }, [navigation, loaded]);
@@ -42,6 +47,11 @@ function ShopForm({ profileId }: { profileId: number }) {
     });
     return () => { active = false; };
   }, [profileId]);
+
+  const closeInfo = () => {
+    setInfoOpen(false);
+    setShowCatalog(false);
+  };
 
   const close = () => {
     if (pending.current) return;
@@ -104,6 +114,54 @@ function ShopForm({ profileId }: { profileId: number }) {
           </View>
         ))}
       </ScrollView>
+      <Modal visible={infoOpen} transparent animationType="fade" onRequestClose={closeInfo}>
+        <View style={styles.overlay}>
+          <View style={styles.dialog} accessibilityViewIsModal>
+            <View style={styles.header}>
+              <Text variant="titleLarge" accessibilityRole="header" style={styles.dialogTitle}>O liście sklepów</Text>
+              <IconButton icon="close" accessibilityLabel="Zamknij informacje" onPress={closeInfo} />
+            </View>
+            <ScrollView contentContainerStyle={styles.form}>
+              <View style={[styles.infoCard, { backgroundColor: surfaces.surface }]}>
+                <View style={[styles.icon, { backgroundColor: "#fff" }]}>
+                  <MaterialCommunityIcons name="store-outline" size={23} color={accent} />
+                </View>
+                <Text style={styles.infoCopy}>Dodaj własne sklepy, aby pojawiały się w podpowiedziach podczas wpisywania nazwy wydatku.</Text>
+              </View>
+              <Button
+                mode="outlined"
+                textColor={accent}
+                icon={showCatalog ? "chevron-up" : "chevron-down"}
+                accessibilityState={{ expanded: showCatalog }}
+                onPress={() => setShowCatalog(!showCatalog)}
+              >
+                {showCatalog ? "Ukryj domyślne sklepy" : "Pokaż domyślne sklepy"}
+              </Button>
+              {showCatalog && shopGroups([]).map(group => (
+                <View key={group.category} style={[styles.card, styles.catalogGroup, { borderColor: surfaces.border }]}>
+                  <View style={styles.catalogHeader}>
+                    <View style={[styles.icon, { backgroundColor: surfaces.surfaceStrong }]}>
+                      <MaterialCommunityIcons
+                        name={EXPENSE_CATEGORIES.find(category => category.label === group.category)?.icon ?? "store-outline"}
+                        size={20}
+                        color={accent}
+                      />
+                    </View>
+                    <Text accessibilityRole="header" style={styles.catalogTitle}>{group.category}</Text>
+                  </View>
+                  <View style={styles.shopTags}>
+                    {group.names.map(name => (
+                      <View key={name} style={[styles.shopTag, { backgroundColor: surfaces.surface }]}>
+                        <Text variant="bodySmall">{name}</Text>
+                      </View>
+                    ))}
+                  </View>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        </View>
+      </Modal>
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
         <KeyboardAvoidingView style={styles.overlay} behavior={Platform.OS === "ios" ? "padding" : undefined}>
           <View style={styles.dialog} accessibilityViewIsModal>
@@ -145,6 +203,15 @@ const styles = StyleSheet.create({
   shopRow: { minHeight: 48, justifyContent: "center", paddingHorizontal: 16, paddingVertical: 10, borderTopWidth: StyleSheet.hairlineWidth },
   empty: { alignItems: "center", padding: 24, gap: 12, borderRadius: 18, borderWidth: 1 },
   overlay: { flex: 1, justifyContent: "center", padding: 20, backgroundColor: "rgba(31,18,32,0.48)" },
+  headerButtons: { flexDirection: "row", alignItems: "center" },
+  infoButton: { margin: 0 },
+  infoCard: { flexDirection: "row", alignItems: "center", gap: 12, padding: 14, borderRadius: 16 },
+  infoCopy: { flex: 1, lineHeight: 20 },
+  catalogGroup: { padding: 12, gap: 12 },
+  catalogHeader: { flexDirection: "row", alignItems: "center", gap: 10 },
+  shopTags: { flexDirection: "row", flexWrap: "wrap", gap: 6 },
+  shopTag: { paddingHorizontal: 10, paddingVertical: 6, borderRadius: 10 },
+  catalogTitle: { fontFamily: "MontserratSemiBold" },
   headerAdd: { margin: 0, marginRight: -8 },
   dialog: { backgroundColor: "#fff", borderRadius: 24, maxHeight: "90%", width: "100%", maxWidth: 520, alignSelf: "center", overflow: "hidden" },
   header: { flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8 },
